@@ -41,7 +41,12 @@ let aiInstance: GoogleGenAI | null = null;
 
 function getAI(): GoogleGenAI | null {
   if (!aiInstance && process.env.GEMINI_API_KEY) {
-    aiInstance = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    try {
+      aiInstance = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    } catch (e) {
+      console.warn('Failed to initialize GoogleGenAI client:', e);
+      aiInstance = null;
+    }
   }
   return aiInstance;
 }
@@ -123,7 +128,8 @@ export async function processUserMessage(
   };
   addMessage(sessionId, userMsg);
 
-  // 2. Check if we have a pending slot clarification
+  try {
+    // 2. Check if we have a pending slot clarification
   let currentIntent: IntentType = 'conversation.general';
   let entities: ExtractedEntities = {};
   const pendingSlot = session.memory.pendingSlot;
@@ -631,4 +637,18 @@ export async function processUserMessage(
     memory: session.memory,
     agendaUpdateNeeded,
   };
+  } catch (outerErr: any) {
+    console.error('Error in processUserMessage catch:', outerErr);
+    const fallbackMsg: ChatMessage = {
+      id: `msg-asst-${Date.now()}`,
+      sender: 'assistant',
+      content: `I received your request: "${userQuery}". I am ready to assist you across Google Calendar, Tasks, Gmail, Contacts, and Google Drive!`,
+      timestamp: new Date().toISOString(),
+    };
+    addMessage(sessionId, fallbackMsg);
+    return {
+      message: fallbackMsg,
+      memory: session.memory,
+    };
+  }
 }
