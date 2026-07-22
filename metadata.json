@@ -1,0 +1,10 @@
+{
+  "name": "Nexus AI Personal Assistant",
+  "description": "Production-grade AI Personal Assistant with voice and text capabilities integrated with Google Workspace.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
