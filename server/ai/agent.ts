@@ -163,7 +163,7 @@ export async function processUserMessage(
     // Perform AI Intent Detection & Entity Extraction
     if (ai) {
       try {
-        const model = 'gemini-2.5-flash';
+        const model = 'gemini-3.6-flash';
         const prompt = `${INTENT_EXTRACTION_SYSTEM_PROMPT}\n\nCurrent local time: ${nowStr}\nUser Query: "${userQuery}"\nRecent Context: Last referenced event: ${session.memory.lastReferencedEventTitle || 'None'}`;
         const result = await ai.models.generateContent({
           model,
@@ -607,7 +607,7 @@ export async function processUserMessage(
       if (ai) {
         try {
           const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.6-flash',
             contents: `${RESPONSE_GENERATION_SYSTEM_PROMPT}\n\nUser asked: "${userQuery}"`,
           });
           responseText = response.text || "I'm here to assist with your Google Calendar, Tasks, Gmail, Contacts, and Drive. What would you like to do?";
