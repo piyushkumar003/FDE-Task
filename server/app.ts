@@ -1,13 +1,20 @@
+console.log("Loading server/app");
+
 import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { processUserMessage } from './ai/agent';
+console.log("Imported agent");
 import { generateAuthUrl, getAuthStatus, handleAuthCallback, logoutUser } from './auth';
+console.log("Imported auth");
 import { getSession, popUndoItem } from './memory';
 import { list_events, create_event, update_event, delete_event, restoreDeletedEvent } from './tools/calendarTool';
+console.log("Imported calendarTool");
 import { listTasks, restoreDeletedTask, deleteTask } from './tools/taskTool';
+console.log("Imported taskTool");
 
 export function createApp() {
+  console.log("createApp called");
   const app = express();
 
   app.use(express.json());
