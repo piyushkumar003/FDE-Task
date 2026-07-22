@@ -42,7 +42,14 @@ let aiInstance: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
   if (!aiInstance && process.env.GEMINI_API_KEY) {
     try {
-      aiInstance = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      aiInstance = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
     } catch (e) {
       console.warn('Failed to initialize GoogleGenAI client:', e);
       aiInstance = null;

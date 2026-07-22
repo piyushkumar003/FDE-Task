@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { GoogleGenAI } from '@google/genai';
 import { processUserMessage } from './ai/agent';
 import { generateAuthUrl, getAuthStatus, handleAuthCallback, logoutUser } from './auth';
 import { getSession, popUndoItem } from './memory';
@@ -15,6 +16,57 @@ export function createApp() {
   // API Routes
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Diagnostic Endpoint (Step 13)
+  app.get('/api/diagnostic', async (req, res) => {
+    const diagnostic: any = {
+      timestamp: new Date().toISOString(),
+      env: {
+        nodeEnv: process.env.NODE_ENV || 'development',
+        hasGeminiApiKey: !!process.env.GEMINI_API_KEY,
+        hasGoogleClientId: !!process.env.GOOGLE_CLIENT_ID,
+        appUrl: process.env.APP_URL || 'Not set',
+      },
+      gemini: 'UNKNOWN',
+      calendar: 'UNKNOWN',
+      tasks: 'UNKNOWN',
+      oauth: getAuthStatus(),
+    };
+
+    // Test Gemini
+    try {
+      if (process.env.GEMINI_API_KEY) {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const testRes = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: 'Say OK',
+        });
+        diagnostic.gemini = testRes.text ? 'OK (Connected)' : 'OK (No text response)';
+      } else {
+        diagnostic.gemini = 'DISABLED (Missing GEMINI_API_KEY)';
+      }
+    } catch (err: any) {
+      diagnostic.gemini = `ERROR: ${err?.message || err}`;
+    }
+
+    // Test Calendar
+    try {
+      const calRes = await list_events();
+      diagnostic.calendar = calRes.success ? 'OK (Connected)' : `ERROR: ${calRes.reason}`;
+    } catch (err: any) {
+      diagnostic.calendar = `ERROR: ${err?.message || err}`;
+    }
+
+    // Test Tasks
+    try {
+      const taskRes = await listTasks('all');
+      diagnostic.tasks = taskRes.success ? 'OK (Connected)' : `ERROR: ${taskRes.reason}`;
+    } catch (err: any) {
+      diagnostic.tasks = `ERROR: ${err?.message || err}`;
+    }
+
+    res.json(diagnostic);
   });
 
   // Auth Routes
