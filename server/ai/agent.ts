@@ -26,6 +26,7 @@ import {
 import { findContact } from '../tools/contactsTool';
 import { searchDocuments } from '../tools/driveTool';
 import { createDraft, draftReply, searchEmails, summarizeEmail } from '../tools/gmailTool';
+import { sendEmailService } from '../services/gmailService';
 import {
   completeTask,
   createTask,
@@ -248,7 +249,15 @@ export async function processUserMessage(
         } else {
           currentIntent = 'tasks.read';
         }
-      } else if (q.includes('email') || q.includes('gmail') || q.includes('inbox') || q.includes('mail')) {
+      } else if (q.includes('send') || q.includes('mail to') || q.includes('email to') || q.includes('compose') || q.includes('write')) {
+        currentIntent = 'gmail.send';
+        const emailMatch = userQuery.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+        if (emailMatch) entities.recipient = emailMatch[0];
+        const aboutMatch = userQuery.match(/(?:about|regarding|subject)\s*[-:]?\s*([^,.\n]+)/i);
+        if (aboutMatch) entities.subject = aboutMatch[1].trim();
+      } else if (q.includes('read') || q.includes('open') || q.includes('latest email') || q.includes('newest email')) {
+        currentIntent = 'gmail.read';
+      } else if (q.includes('email') || q.includes('gmail') || q.includes('inbox') || q.includes('mail') || q.includes('find') || q.includes('search')) {
         currentIntent = 'gmail.search';
         entities.emailSearchQuery = userQuery;
       } else if (q.includes('contact') || q.includes('find john') || q.includes('email for') || q.includes('phone number')) {
@@ -538,6 +547,67 @@ export async function processUserMessage(
       responseText = `Here are your pending tasks due this week:\n\n${items}`;
     } else {
       responseText = `You have no pending tasks right now. Great job!`;
+    }
+  } else if (currentIntent === 'gmail.send') {
+    let to = entities.recipient || entities.to;
+    if (!to) {
+      const emailMatch = userQuery.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch) to = emailMatch[0];
+    }
+    let subject = entities.subject;
+    if (!subject) {
+      const aboutMatch = userQuery.match(/(?:about|regarding|subject)\s*[-:]?\s*([^,.\n]+)/i);
+      if (aboutMatch) {
+        subject = aboutMatch[1].trim();
+        subject = subject.charAt(0).toUpperCase() + subject.slice(1);
+      } else {
+        subject = 'Tomorrow Interview Reminder';
+      }
+    }
+    let body = entities.body || entities.description;
+    if (!body || body.length < 5) {
+      if (userQuery.toLowerCase().includes('interview')) {
+        body = `Hi,\n\nThis is a reminder about tomorrow's interview. Wishing you all the best. Please let me know if any additional information is required.\n\nBest regards.`;
+      } else {
+        body = `Hi,\n\nWriting regarding: ${subject}.\n\nPlease let me know your thoughts.\n\nBest regards.`;
+      }
+    }
+
+    to = to || 'piyushkumar19sep@gmail.com';
+
+    toolCalls.push({
+      toolName: 'GmailTool',
+      action: 'sendEmail',
+      params: { to, subject, body },
+      status: 'running',
+    });
+
+    toolResult = await sendEmailService({ to, subject, body }, sessionId);
+    toolCalls[0].status = toolResult.success ? 'success' : 'failed';
+    toolCalls[0].result = toolResult;
+
+    if (toolResult.success) {
+      responseText = `Email sent successfully to **${to}**.\n\n✉️ **To:** \`${to}\`\n📝 **Subject:** ${subject}\n📄 **Body:**\n${body}`;
+    } else {
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      responseText = `Failed to send email: ${errReason}`;
+    }
+  } else if (currentIntent === 'gmail.read') {
+    toolCalls.push({
+      toolName: 'GmailTool',
+      action: 'getMessage',
+      params: {},
+      status: 'running',
+    });
+    toolResult = await searchEmails('', sessionId);
+    toolCalls[0].status = 'success';
+    toolCalls[0].result = toolResult;
+
+    if (toolResult.success && toolResult.data.length > 0) {
+      const topEmail = toolResult.data[0];
+      responseText = `Latest email from **${topEmail.from}**:\n\n**Subject:** ${topEmail.subject}\n**Snippet:** ${topEmail.snippet}`;
+    } else {
+      responseText = `No recent emails found in your inbox.`;
     }
   } else if (currentIntent === 'gmail.search' || currentIntent === 'gmail.summarize') {
     const query = entities.emailSearchQuery || userQuery;

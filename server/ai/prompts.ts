@@ -23,11 +23,18 @@ Supported Intents:
 - tasks.complete (mark task completed/done)
 - tasks.delete (delete task)
 - contacts.search (find contact/email/phone)
-- gmail.search (search emails)
+- gmail.search (search emails, find emails, e.g., "Find emails from Amazon")
 - gmail.summarize (summarize thread)
 - gmail.draft (draft reply)
+- gmail.send (send email, compose email, mail someone, e.g., "Send an email to John")
+- gmail.read (read latest email, open email, e.g., "Read my latest email")
 - drive.search (search documents)
 - conversation.general (chitchat, greeting, general question)
+
+STRICT GMAIL DISAMBIGUATION RULES:
+1. Queries asking to send, mail, or compose an email (e.g., "Send a mail to X", "Email Sarah about meeting", "Compose an email") MUST be classified as "gmail.send". NEVER classify send/mail requests as "gmail.search".
+2. Queries asking to find or search emails (e.g., "Find emails from Amazon", "Search emails about internship") MUST be classified as "gmail.search".
+3. Queries asking to read or open an email (e.g., "Read my latest email", "Open the email from HR") MUST be classified as "gmail.read".
 
 Return ONLY a raw JSON object with the following schema:
 {

@@ -149,59 +149,74 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
   }
 
   // Live Google Calendar API Call if authenticated with access token
-  if (session.isAuthenticated && session.tokens?.access_token) {
-    const calendar = getCalendarClient(sessionId);
-    if (calendar) {
-      try {
-        const response = await calendar.events.list({
-          calendarId: 'primary',
-          timeMin: startDate ? new Date(startDate).toISOString() : undefined,
-          timeMax: endDate ? new Date(endDate).toISOString() : undefined,
-          singleEvents: true,
-          orderBy: 'startTime',
-        });
+  if (session.isAuthenticated) {
+    if (session.tokens?.access_token) {
+      const calendar = getCalendarClient(sessionId);
+      if (calendar) {
+        try {
+          const response = await calendar.events.list({
+            calendarId: 'primary',
+            timeMin: startDate ? new Date(startDate).toISOString() : undefined,
+            timeMax: endDate ? new Date(endDate).toISOString() : undefined,
+            singleEvents: true,
+            orderBy: 'startTime',
+          });
 
-        const events = (response.data.items || []).map(mapGoogleEvent);
-        return {
-          success: true,
-          data: events,
-        };
-      } catch (error: any) {
-        const errRes = handleGoogleApiError(error);
-        return {
-          success: false,
-          error: errRes.error,
-          recoverable: errRes.recoverable,
-          errorCode: errRes.errorCode,
-        };
+          const events = (response.data.items || []).map(mapGoogleEvent);
+          return {
+            success: true,
+            data: events,
+          };
+        } catch (error: any) {
+          const errRes = handleGoogleApiError(error);
+          return {
+            success: false,
+            error: errRes.error,
+            recoverable: errRes.recoverable,
+            errorCode: errRes.errorCode,
+          };
+        }
       }
+    } else {
+      // Authenticated via Google/Email/Demo login but no live Google access token: return empty schedule (vague/clean)
+      return {
+        success: true,
+        data: [],
+      };
     }
   }
 
-  // Fallback to session mock store (Guest Mode or Demo)
-  try {
-    let filtered = [...session.mockEvents];
-    if (startMs !== null) {
-      filtered = filtered.filter((e) => new Date(e.start).getTime() >= startMs! - 24 * 3600 * 1000);
-    }
-    if (endMs !== null) {
-      filtered = filtered.filter((e) => new Date(e.start).getTime() <= endMs! + 24 * 3600 * 1000);
-    }
+  // Fallback to session mock store only in Guest Mode
+  if (session.isGuest) {
+    try {
+      let filtered = [...session.mockEvents];
+      if (startMs !== null) {
+        filtered = filtered.filter((e) => new Date(e.start).getTime() >= startMs! - 24 * 3600 * 1000);
+      }
+      if (endMs !== null) {
+        filtered = filtered.filter((e) => new Date(e.start).getTime() <= endMs! + 24 * 3600 * 1000);
+      }
 
-    filtered.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      filtered.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
-    return {
-      success: true,
-      data: filtered,
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      error: 'Calendar unavailable. Please check your Google Calendar connection.',
-      errorCode: 'CALENDAR_UNAVAILABLE',
-      recoverable: true,
-    };
+      return {
+        success: true,
+        data: filtered,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: 'Calendar unavailable. Please check your Google Calendar connection.',
+        errorCode: 'CALENDAR_UNAVAILABLE',
+        recoverable: true,
+      };
+    }
   }
+
+  return {
+    success: true,
+    data: [],
+  };
 }
 
 

@@ -25,6 +25,8 @@ export type IntentType =
   | 'gmail.search'
   | 'gmail.summarize'
   | 'gmail.draft'
+  | 'gmail.send'
+  | 'gmail.read'
   | 'drive.search'
   | 'conversation.clarification'
   | 'conversation.general';
