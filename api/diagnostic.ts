@@ -4,11 +4,12 @@ import { list_events } from '../server/tools/calendarTool';
 import { listTasks } from '../server/tools/taskTool';
 
 export default async function handler(req: any, res: any) {
+  const geminiKey = process.env.FDE || process.env.GEMINI_API_KEY;
   const diagnostic: any = {
     timestamp: new Date().toISOString(),
     env: {
       nodeEnv: process.env.NODE_ENV || 'development',
-      hasGeminiApiKey: !!process.env.GEMINI_API_KEY,
+      hasGeminiApiKey: !!geminiKey,
       hasGoogleClientId: !!process.env.GOOGLE_CLIENT_ID,
       appUrl: process.env.APP_URL || 'Not set',
     },
@@ -19,15 +20,15 @@ export default async function handler(req: any, res: any) {
   };
 
   try {
-    if (process.env.GEMINI_API_KEY) {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    if (geminiKey) {
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
       const testRes = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: 'Say OK',
       });
       diagnostic.gemini = testRes.text ? 'OK (Connected)' : 'OK (No text response)';
     } else {
-      diagnostic.gemini = 'DISABLED (Missing GEMINI_API_KEY)';
+      diagnostic.gemini = 'DISABLED (Missing GEMINI_API_KEY / FDE)';
     }
   } catch (err: any) {
     diagnostic.gemini = `ERROR: ${err?.message || err}`;

@@ -40,10 +40,11 @@ import {
 let aiInstance: GoogleGenAI | null = null;
 
 function getAI(): GoogleGenAI | null {
-  if (!aiInstance && process.env.GEMINI_API_KEY) {
+  const apiKey = process.env.FDE || process.env.GEMINI_API_KEY;
+  if (!aiInstance && apiKey) {
     try {
       aiInstance = new GoogleGenAI({
-        apiKey: process.env.GEMINI_API_KEY,
+        apiKey,
         httpOptions: {
           headers: {
             'User-Agent': 'aistudio-build',
