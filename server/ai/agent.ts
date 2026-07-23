@@ -138,6 +138,25 @@ export async function processUserMessage(
   addMessage(sessionId, userMsg);
 
   try {
+    const lowerQuery = userQuery.toLowerCase();
+    const unsafeKeywords = ['murder', 'kill', 'assassinate', 'suicide', 'bomb', 'terrorist', 'attack', 'weapon', 'hack bank', 'illegal drug', 'child abuse', 'ransomware'];
+    const isUnsafe = unsafeKeywords.some((kw) => lowerQuery.includes(kw));
+    if (isUnsafe) {
+      const refusalText = `I cannot assist with or process requests involving violence, illegal acts, or harm. If you need help with a legitimate calendar event, task, or email, please let me know.`;
+      const agentMsg: ChatMessage = {
+        id: `msg-agent-${Date.now()}`,
+        sender: 'assistant',
+        content: refusalText,
+        timestamp: new Date().toISOString(),
+        intent: 'conversation.general',
+      };
+      addMessage(sessionId, agentMsg);
+      return {
+        message: agentMsg,
+        memory: session.memory,
+      };
+    }
+
     // 2. Check if we have a pending slot clarification
   let currentIntent: IntentType = 'conversation.general';
   let entities: ExtractedEntities = {};

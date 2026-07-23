@@ -1,4 +1,5 @@
-import { searchEmails, summarizeEmail, createDraft } from '../tools/gmailTool';
+import { searchEmails, summarizeEmail, createDraft, sendEmail } from '../tools/gmailTool';
+
 
 export async function getRecentEmailsService(sessionId: string = 'default') {
   try {
@@ -36,7 +37,7 @@ export async function getMessageService(messageId: string, sessionId: string = '
 
 export async function sendEmailService(params: { to: string; subject: string; body: string }, sessionId: string = 'default') {
   try {
-    const res = await createDraft(params, sessionId);
+    const res = await sendEmail(params, sessionId);
     return {
       success: res.success,
       data: res.data || null,

@@ -22,6 +22,92 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const [scheduleViewMode, setScheduleViewMode] = React.useState<'week' | 'all'>('week');
+  const [selectedYear, setSelectedYear] = React.useState<string>(String(new Date().getFullYear()));
+  const [selectedMonth, setSelectedMonth] = React.useState<string>('all');
+
+  // Current week bounds (Monday to Sunday)
+  const currentWeekEvents = React.useMemo(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const distToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distToMon);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return events.filter(evt => {
+      const d = new Date(evt.start);
+      return d >= monday && d <= sunday;
+    });
+  }, [events]);
+
+  const currentWeekTasks = React.useMemo(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const distToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distToMon);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return tasks.filter(t => {
+      if (!t.due) return true;
+      const d = new Date(t.due);
+      return d >= monday && d <= sunday;
+    });
+  }, [tasks]);
+
+  const availableYears = React.useMemo(() => {
+    const yearsSet = new Set<string>();
+    yearsSet.add(String(new Date().getFullYear()));
+    events.forEach(evt => {
+      if (evt.start) {
+        yearsSet.add(String(new Date(evt.start).getFullYear()));
+      }
+    });
+    return Array.from(yearsSet).sort((a, b) => Number(b) - Number(a));
+  }, [events]);
+
+  const filteredEvents = React.useMemo(() => {
+    if (scheduleViewMode === 'week') {
+      return currentWeekEvents;
+    }
+    return events.filter(evt => {
+      const d = new Date(evt.start);
+      if (selectedYear !== 'all' && d.getFullYear().toString() !== selectedYear) {
+        return false;
+      }
+      if (selectedMonth !== 'all' && d.getMonth().toString() !== selectedMonth) {
+        return false;
+      }
+      return true;
+    });
+  }, [events, scheduleViewMode, selectedYear, selectedMonth, currentWeekEvents]);
+
+  const filteredTasks = React.useMemo(() => {
+    if (scheduleViewMode === 'week') {
+      return currentWeekTasks;
+    }
+    return tasks.filter(t => {
+      if (!t.due) return true;
+      const d = new Date(t.due);
+      if (selectedYear !== 'all' && d.getFullYear().toString() !== selectedYear) {
+        return false;
+      }
+      if (selectedMonth !== 'all' && d.getMonth().toString() !== selectedMonth) {
+        return false;
+      }
+      return true;
+    });
+  }, [tasks, scheduleViewMode, selectedYear, selectedMonth, currentWeekTasks]);
+
   const chartData = React.useMemo(() => {
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const counts: { [key: string]: { day: string; meetings: number; tasks: number } } = {
@@ -34,7 +120,7 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
       'Sun': { day: 'Sun', meetings: 0, tasks: 0 },
     };
 
-    events.forEach(evt => {
+    currentWeekEvents.forEach(evt => {
       if (evt.start) {
         const d = new Date(evt.start);
         const dayStr = dayNames[d.getDay()];
@@ -44,7 +130,7 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
       }
     });
 
-    tasks.forEach(t => {
+    currentWeekTasks.forEach(t => {
       if (t.due) {
         const d = new Date(t.due);
         const dayStr = dayNames[d.getDay()];
@@ -57,7 +143,7 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
     });
 
     return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => counts[d]);
-  }, [events, tasks]);
+  }, [currentWeekEvents, currentWeekTasks]);
 
   return (
     <div id="agenda-sidebar-overlay" className="fixed inset-0 z-40 bg-zinc-950/70 backdrop-blur-xs flex justify-end">
@@ -130,18 +216,81 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
                 <Clock className="w-3.5 h-3.5 text-blue-400" />
                 Calendar Schedule
               </h3>
-              <span className="text-[10px] font-mono bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-md border border-blue-500/20">
-                {events.length} Events
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setScheduleViewMode('week')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    scheduleViewMode === 'week' ? 'bg-blue-500 text-white font-medium' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  This Week
+                </button>
+                <button
+                  onClick={() => setScheduleViewMode('all')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    scheduleViewMode === 'all' ? 'bg-blue-500 text-white font-medium' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  All-Time / Calendar UI
+                </button>
+              </div>
+            </div>
+
+            {scheduleViewMode === 'all' && (
+              <div className="p-3 mb-3 rounded-lg bg-zinc-950 border border-zinc-800 flex flex-wrap gap-2 items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-zinc-400 font-mono">Year:</span>
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="all">All Years</option>
+                    {availableYears.map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-zinc-400 font-mono">Month:</span>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-800 text-zinc-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="all">All Months</option>
+                    <option value="0">January</option>
+                    <option value="1">February</option>
+                    <option value="2">March</option>
+                    <option value="3">April</option>
+                    <option value="4">May</option>
+                    <option value="5">June</option>
+                    <option value="6">July</option>
+                    <option value="7">August</option>
+                    <option value="8">September</option>
+                    <option value="9">October</option>
+                    <option value="10">November</option>
+                    <option value="11">December</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-mono text-zinc-500">
+                Showing {filteredEvents.length} events {scheduleViewMode === 'week' ? '(This Week)' : '(All-Time Filtered)'}
               </span>
             </div>
 
-            {events.length === 0 ? (
+            {filteredEvents.length === 0 ? (
               <div className="text-center py-6 border border-dashed border-zinc-800 rounded-xl text-xs font-mono text-zinc-500">
-                No scheduled events found.
+                No scheduled events found for this selection.
               </div>
             ) : (
               <div className="space-y-2">
-                {events.map((evt) => {
+                {filteredEvents.map((evt) => {
                   const dateFormatted = new Date(evt.start).toLocaleString('en-US', {
                     weekday: 'short',
                     month: 'short',
