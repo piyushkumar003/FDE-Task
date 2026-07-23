@@ -7,7 +7,8 @@ export default async function handler(req: any, res: any) {
   }
   try {
     return res.json({ authUrl: generateAuthUrl() });
-  } catch (err) {
+  } catch (err: any) {
+    console.error('Error generating auth URL:', err);
     return res.json({ authUrl: '/api/auth/demo-login' });
   }
 }
