@@ -58,11 +58,24 @@ export async function loginGuest(sessionId: string = 'default') {
   return res.json();
 }
 
+export async function loginEmail(email: string, password: string, sessionId: string = 'default') {
+  const res = await fetch('/api/auth/email-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, sessionId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Login failed' }));
+    throw new Error(err.error || 'Failed to login with email');
+  }
+  return res.json();
+}
+
 export async function getGoogleAuthUrl() {
   const res = await fetch('/api/auth/url');
   if (!res.ok) throw new Error('Failed to get auth URL');
   const data = await res.json();
-  return data.url;
+  return data.authUrl || data.url;
 }
 
 export async function logoutApi(sessionId: string = 'default') {

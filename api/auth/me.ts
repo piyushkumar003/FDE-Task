@@ -1,7 +1,7 @@
-import { listTasksService } from '../../server/services/tasksService';
+import { getAuthMe } from '../../server/services/authService';
 
 export default async function handler(req: any, res: any) {
   const sessionId = req.query?.sessionId || req.body?.sessionId || 'default';
-  const result = await listTasksService(sessionId as string);
+  const result = getAuthMe(sessionId);
   return res.json(result);
 }

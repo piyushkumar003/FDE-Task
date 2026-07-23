@@ -34,15 +34,6 @@ export async function createTask(params: { title: string; notes?: string; due?: 
       };
     }
 
-    if (session.isAuthenticated && !session.tokens?.access_token) {
-      return {
-        success: false,
-        error: 'Authentication expired. Please log in with Google again.',
-        errorCode: 'AUTHENTICATION_EXPIRED',
-        recoverable: true,
-      };
-    }
-
     if (!params.title) {
       return { success: false, error: 'Task title is required.', errorCode: 'INVALID_INPUT', recoverable: true };
     }

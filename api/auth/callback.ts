@@ -1,20 +1,29 @@
 import { handleAuthCallback } from '../../server/auth';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  const code = req.method === 'GET' ? req.query?.code : req.body?.code;
+  const sessionId = req.method === 'GET' ? (req.query?.state || 'default') : (req.body?.sessionId || 'default');
 
-  const { code, sessionId = 'default' } = req.body || {};
   if (!code) {
+    if (req.method === 'GET') {
+      return res.redirect('/?error=Missing+authorization+code');
+    }
     return res.status(400).json({ error: 'Code is required' });
   }
 
   try {
-    const authState = await handleAuthCallback(code, sessionId);
-    return res.json(authState);
+    await handleAuthCallback(code as string, sessionId as string);
+    if (req.method === 'GET') {
+      return res.redirect('/');
+    }
+    return res.json({ success: true });
   } catch (error: any) {
+    console.error('OAuth callback error:', error);
+    if (req.method === 'GET') {
+      return res.redirect(`/?error=${encodeURIComponent(error?.message || 'Authentication failed')}`);
+    }
     return res.status(500).json({ error: error?.message || 'Authentication failed' });
   }
 }
+
 

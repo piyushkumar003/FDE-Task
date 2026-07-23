@@ -1,10 +1,7 @@
-import { createTask } from '../../server/tools/taskTool';
+import { createTaskService } from '../../server/services/tasksService';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const result = await createTask(req.body);
+  const sessionId = req.body?.sessionId || req.query?.sessionId || 'default';
+  const result = await createTaskService(req.body, sessionId as string);
   return res.json(result);
 }

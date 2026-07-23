@@ -148,17 +148,8 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
     };
   }
 
-  // Live Google Calendar API Call if authenticated
-  if (session.isAuthenticated) {
-    if (!session.tokens?.access_token) {
-      return {
-        success: false,
-        error: 'Authentication expired. Please log in with Google again.',
-        errorCode: 'AUTHENTICATION_EXPIRED',
-        recoverable: true,
-      };
-    }
-
+  // Live Google Calendar API Call if authenticated with access token
+  if (session.isAuthenticated && session.tokens?.access_token) {
     const calendar = getCalendarClient(sessionId);
     if (calendar) {
       try {
@@ -383,17 +374,8 @@ export async function create_event(params: CreateEventInput, sessionId: string =
     }
   }
 
-  // Live Google Calendar API Call if authenticated
-  if (session.isAuthenticated) {
-    if (!session.tokens?.access_token) {
-      return {
-        success: false,
-        error: 'Authentication expired. Please log in with Google again.',
-        errorCode: 'AUTHENTICATION_EXPIRED',
-        recoverable: true,
-      };
-    }
-
+  // Live Google Calendar API Call if authenticated with access token
+  if (session.isAuthenticated && session.tokens?.access_token) {
     const calendar = getCalendarClient(sessionId);
     if (calendar) {
       try {
@@ -546,17 +528,8 @@ export async function update_event(params: UpdateEventInput, sessionId: string =
     };
   }
 
-  // Live Google Calendar API Patch Call if authenticated
-  if (session.isAuthenticated) {
-    if (!session.tokens?.access_token) {
-      return {
-        success: false,
-        error: 'Authentication expired. Please log in with Google again.',
-        errorCode: 'AUTHENTICATION_EXPIRED',
-        recoverable: true,
-      };
-    }
-
+  // Live Google Calendar API Patch Call if authenticated with access token
+  if (session.isAuthenticated && session.tokens?.access_token) {
     const calendar = getCalendarClient(sessionId);
     if (calendar) {
       try {
@@ -711,17 +684,8 @@ export async function delete_event(input: DeleteEventInput | string, sessionId: 
 
   const cleanId = eventId.trim();
 
-  // Live Google Calendar API Delete Call if authenticated
-  if (session.isAuthenticated) {
-    if (!session.tokens?.access_token) {
-      return {
-        success: false,
-        error: 'Authentication expired. Please log in with Google again.',
-        errorCode: 'AUTHENTICATION_EXPIRED',
-        recoverable: true,
-      };
-    }
-
+  // Live Google Calendar API Delete Call if authenticated with access token
+  if (session.isAuthenticated && session.tokens?.access_token) {
     const calendar = getCalendarClient(sessionId);
     if (calendar) {
       try {

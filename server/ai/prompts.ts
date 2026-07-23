@@ -5,6 +5,12 @@
 export const INTENT_EXTRACTION_SYSTEM_PROMPT = `You are the Intent Detection and Entity Extraction Engine for Nexus AI Personal Assistant.
 Given a user query and current conversation context (including pending slots), identify the primary user intent and extract all relevant structured entities.
 
+STRICT DISAMBIGUATION RULES:
+1. Queries asking to view, list, check, or inquire about schedule, agenda, calendar, or meetings (e.g., "What is my schedule on Monday?", "What meetings do I have today?", "Show my calendar") MUST be classified as "calendar.read". NEVER classify schedule inquiries as "calendar.create".
+2. Queries asking to delete, cancel, or remove an event or appointment (e.g., "Delete my dentist appointment", "Cancel my meeting") MUST be classified as "calendar.delete". NEVER classify delete/cancel requests as "calendar.create".
+3. Queries asking to schedule, book, set up, or create a new meeting or event (e.g., "Schedule a meeting tomorrow at 3 PM") MUST be classified as "calendar.create".
+4. Queries asking to move or reschedule an event (e.g., "Move my meeting to Friday") MUST be classified as "calendar.update".
+
 Supported Intents:
 - calendar.create (create meeting/event)
 - calendar.read (get/show agenda or schedule)

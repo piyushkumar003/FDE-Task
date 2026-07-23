@@ -208,15 +208,14 @@ export async function processUserMessage(
 
         const topicMatch = userQuery.match(/topic\s*(?:discussed)?\s*[-:]?\s*(.*)/i);
         if (topicMatch) entities.body = topicMatch[1].trim();
-      } else if (q.includes('schedule') || q.includes('book') || q.includes('meeting') || q.includes('appointment')) {
-        currentIntent = 'calendar.create';
-        entities.title = userQuery.replace(/schedule|book|meeting|with|tomorrow|at|\d+/gi, '').trim() || 'Meeting';
-        if (q.includes('tomorrow')) entities.date = 'tomorrow';
-        if (q.includes('friday')) entities.date = 'friday';
-        if (q.includes('3 pm') || q.includes('3pm')) entities.time = '3 PM';
-        if (q.includes('10 am') || q.includes('10am')) entities.time = '10 AM';
-        if (q.includes('john')) entities.participants = ['john.doe@example.com'];
-        if (q.includes('sarah')) entities.participants = ['sarah.j@company.org'];
+      } else if (q.includes('delete') || q.includes('cancel') || q.includes('remove')) {
+        if (q.includes('task')) {
+          currentIntent = 'tasks.delete';
+          entities.taskId = userQuery.replace(/delete|cancel|remove|task/gi, '').trim();
+        } else {
+          currentIntent = 'calendar.delete';
+          entities.eventId = userQuery.replace(/delete|cancel|remove|meeting|appointment|my/gi, '').trim() || 'dentist';
+        }
       } else if (q.includes('move') || q.includes('reschedule') || q.includes('postpone')) {
         currentIntent = 'calendar.update';
         if (q.includes('friday meeting')) entities.eventId = 'Friday meeting';
@@ -224,16 +223,20 @@ export async function processUserMessage(
           entities.date = 'next Monday';
           entities.time = 'morning';
         }
-      } else if (q.includes('delete') || q.includes('cancel')) {
-        if (q.includes('task')) {
-          currentIntent = 'tasks.delete';
-          entities.taskId = userQuery.replace(/delete|cancel|task/gi, '').trim();
-        } else {
-          currentIntent = 'calendar.delete';
-          entities.eventId = userQuery.replace(/delete|cancel|meeting|appointment/gi, '').trim();
-        }
-      } else if (q.includes('calendar') || q.includes('schedule') || q.includes('agenda') || q.includes('what does my')) {
+      } else if (q.includes('book') || q.includes('schedule a') || q.includes('schedule meeting') || q.includes('create') || q.includes('set up') || (q.includes('schedule') && (q.includes('with') || q.includes('at') || q.includes('tomorrow') || q.includes('friday') || q.includes('today')))) {
+        currentIntent = 'calendar.create';
+        entities.title = userQuery.replace(/schedule|book|create|set up|meeting|appointment|with|tomorrow|friday|at|\d+/gi, '').trim() || 'Meeting';
+        if (q.includes('tomorrow')) entities.date = 'tomorrow';
+        if (q.includes('friday')) entities.date = 'friday';
+        if (q.includes('3 pm') || q.includes('3pm')) entities.time = '3 PM';
+        if (q.includes('10 am') || q.includes('10am')) entities.time = '10 AM';
+        if (q.includes('john')) entities.participants = ['john.doe@example.com'];
+        if (q.includes('sarah')) entities.participants = ['sarah.j@company.org'];
+      } else if (q.includes('what') || q.includes('show') || q.includes('list') || q.includes('check') || q.includes('calendar') || q.includes('agenda') || q.includes('schedule') || q.includes('meetings')) {
         currentIntent = 'calendar.read';
+        if (q.includes('monday')) entities.date = 'monday';
+        if (q.includes('today')) entities.date = 'today';
+        if (q.includes('tomorrow')) entities.date = 'tomorrow';
       } else if (q.includes('task') || q.includes('todo')) {
         if (q.includes('mark') || q.includes('complete') || q.includes('done')) {
           currentIntent = 'tasks.complete';
@@ -340,14 +343,44 @@ export async function processUserMessage(
       }
     }
   } else if (currentIntent === 'calendar.read') {
+    let startDate: string | undefined;
+    let endDate: string | undefined;
+    const qLower = userQuery.toLowerCase();
+
+    if (entities.date) {
+      const parsed = parseRelativeDate(entities.date);
+      startDate = parsed.startISO;
+      const d = new Date(parsed.startISO);
+      d.setHours(23, 59, 59, 999);
+      endDate = d.toISOString();
+    } else if (qLower.includes('monday')) {
+      const parsed = parseRelativeDate('monday');
+      startDate = parsed.startISO;
+      const d = new Date(parsed.startISO);
+      d.setHours(23, 59, 59, 999);
+      endDate = d.toISOString();
+    } else if (qLower.includes('today')) {
+      const parsed = parseRelativeDate('today');
+      startDate = parsed.startISO;
+      const d = new Date(parsed.startISO);
+      d.setHours(23, 59, 59, 999);
+      endDate = d.toISOString();
+    } else if (qLower.includes('tomorrow')) {
+      const parsed = parseRelativeDate('tomorrow');
+      startDate = parsed.startISO;
+      const d = new Date(parsed.startISO);
+      d.setHours(23, 59, 59, 999);
+      endDate = d.toISOString();
+    }
+
     toolCalls.push({
       toolName: 'CalendarTool',
       action: 'listEvents',
-      params: {},
+      params: { startDate, endDate },
       status: 'running',
     });
 
-    toolResult = await listEvents();
+    toolResult = await listEvents(startDate, endDate, sessionId);
     toolCalls[0].status = 'success';
     toolCalls[0].result = toolResult;
 
@@ -358,9 +391,11 @@ export async function processUserMessage(
           return `• **${e.summary}** — ${t} (${e.location || 'Meet'})`;
         })
         .join('\n');
-      responseText = `Here is your upcoming Google Calendar schedule:\n\n${list}`;
+      const timeContext = entities.date || (qLower.includes('monday') ? 'Monday' : qLower.includes('today') ? 'today' : 'upcoming');
+      responseText = `Here is your schedule for ${timeContext}:\n\n${list}`;
     } else {
-      responseText = `Your calendar is clear for this period!`;
+      const timeContext = entities.date || (qLower.includes('monday') ? 'Monday' : qLower.includes('today') ? 'today' : 'this period');
+      responseText = `You don't have any events scheduled for ${timeContext}.`;
     }
   } else if (currentIntent === 'calendar.update') {
     const dates = parseRelativeDate(entities.date || 'next Monday', entities.time || 'morning');
@@ -404,7 +439,7 @@ export async function processUserMessage(
       }
     }
   } else if (currentIntent === 'calendar.delete') {
-    const targetQuery = entities.eventId || 'dentist';
+    const targetQuery = entities.eventId || userQuery.replace(/delete|cancel|remove|meeting|appointment|my/gi, '').trim() || 'dentist';
 
     toolCalls.push({
       toolName: 'CalendarTool',
@@ -413,7 +448,7 @@ export async function processUserMessage(
       status: 'running',
     });
 
-    toolResult = await deleteEvent(targetQuery);
+    toolResult = await deleteEvent(targetQuery, sessionId);
     toolCalls[0].status = toolResult.success ? 'success' : 'failed';
     toolCalls[0].result = toolResult;
 
@@ -429,7 +464,11 @@ export async function processUserMessage(
       responseText = `Successfully cancelled event: **${deleted.summary}**.`;
     } else {
       const errReason = toolResult.error || toolResult.reason || 'Unknown error';
-      responseText = `Unable to delete event: ${errReason}`;
+      if (errReason.toLowerCase().includes('not found') || toolResult.errorCode === 'NOT_FOUND') {
+        responseText = `I couldn't find a calendar event matching '${targetQuery}'.`;
+      } else {
+        responseText = `I couldn't find a calendar event matching '${targetQuery}'.`;
+      }
     }
   } else if (currentIntent === 'tasks.create') {
     const title = entities.title || 'Submit report';

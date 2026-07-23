@@ -1,10 +1,7 @@
-import { update_event } from '../../server/tools/calendarTool';
+import { updateEventService } from '../../server/services/calendarService';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'PATCH' && req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const result = await update_event(req.body);
+  const sessionId = req.body?.sessionId || req.query?.sessionId || 'default';
+  const result = await updateEventService(req.body, sessionId as string);
   return res.json(result);
 }

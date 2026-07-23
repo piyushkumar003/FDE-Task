@@ -77,6 +77,41 @@ export async function handleAuthCallback(code: string, sessionId: string = 'defa
   }
 }
 
+export function handleEmailLogin(email: string, pass: string, sessionId: string = 'default'): AuthState {
+  if (!email || !email.includes('@')) {
+    throw new Error('Please enter a valid Gmail / Email address.');
+  }
+  const name = email.split('@')[0];
+  const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+  const user = {
+    id: `email-user-${Date.now()}`,
+    name: formattedName,
+    email: email,
+    picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
+  };
+  setSessionAuthenticated(sessionId, user, { access_type: 'offline', scope: 'email-login' });
+  return {
+    authenticated: true,
+    isGuest: false,
+    user,
+  };
+}
+
+export function handleDemoGoogleLogin(sessionId: string = 'default'): AuthState {
+  const user = {
+    id: 'google-demo-user',
+    name: 'Piyush (Google Workspace)',
+    email: 'piyushwc@gmail.com',
+    picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces',
+  };
+  setSessionAuthenticated(sessionId, user, { access_type: 'offline', scope: 'workspace-demo' });
+  return {
+    authenticated: true,
+    isGuest: false,
+    user,
+  };
+}
+
 export function handleGuestLogin(sessionId: string = 'default'): AuthState {
   const session = setSessionGuestMode(sessionId, true);
   return {

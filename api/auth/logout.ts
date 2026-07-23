@@ -1,12 +1,7 @@
-import { logoutUser } from '../../server/auth';
+import { logoutUser } from '../../server/services/authService';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const { sessionId = 'default' } = req.body || {};
-  const authState = logoutUser(sessionId);
-  return res.json({ success: true, authState });
+  const sessionId = req.body?.sessionId || req.query?.sessionId || 'default';
+  const result = logoutUser(sessionId as string);
+  return res.json(result);
 }
-

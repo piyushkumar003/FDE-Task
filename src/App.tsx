@@ -12,6 +12,7 @@ import {
   undoLastAction,
   fetchAuthStatus,
   loginGuest,
+  loginEmail,
   getGoogleAuthUrl,
   logoutApi,
 } from './services/api';
@@ -113,6 +114,17 @@ export default function App() {
     }
   };
 
+  const handleEmailLogin = async (email: string, pass: string) => {
+    const res = await loginEmail(email, pass, sessionId);
+    setAuthState({
+      checked: true,
+      authenticated: res.data.authenticated,
+      isGuest: res.data.isGuest,
+      user: res.data.user,
+    });
+    await loadWorkspaceData();
+  };
+
   const handleLogout = async () => {
     try {
       await logoutApi(sessionId);
@@ -207,7 +219,7 @@ export default function App() {
   }
 
   if (!authState.authenticated && !authState.isGuest) {
-    return <LoginScreen onGoogleLogin={handleGoogleLogin} onGuestLogin={handleGuestLogin} />;
+    return <LoginScreen onGoogleLogin={handleGoogleLogin} onGuestLogin={handleGuestLogin} onEmailLogin={handleEmailLogin} />;
   }
 
   return (

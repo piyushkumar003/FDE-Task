@@ -1,11 +1,8 @@
-import { completeTask } from '../../server/tools/taskTool';
+import { updateTaskService } from '../../server/services/tasksService';
 
 export default async function handler(req: any, res: any) {
-  if (req.method !== 'PATCH' && req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const taskId = (req.body?.taskId || req.body?.id || req.query?.taskId) as string;
-  const result = await completeTask(taskId);
+  const taskId = req.query?.id || req.body?.id || req.query?.taskId || req.body?.taskId;
+  const sessionId = req.body?.sessionId || req.query?.sessionId || 'default';
+  const result = await updateTaskService(taskId as string, req.body, sessionId as string);
   return res.json(result);
 }
