@@ -1,33 +1,10 @@
 import { TaskItem, ToolResult } from '../../src/types';
+import { getSession } from '../memory';
 
-let mockTasks: TaskItem[] = [
-  {
-    id: 'task-101',
-    title: 'Submit quarterly engineering report',
-    notes: 'Include architecture diagrams for Gemini agentic workflow and FastAPI routes',
-    due: new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString(),
-    status: 'needsAction',
-  },
-  {
-    id: 'task-102',
-    title: 'Buy groceries for weekly meal prep',
-    notes: 'Organic spinach, almond milk, coffee beans, salmon fillets',
-    due: new Date(Date.now() + 1 * 24 * 3600 * 1000).toISOString(),
-    status: 'needsAction',
-  },
-  {
-    id: 'task-103',
-    title: 'Review pull request #402 for Google OAuth refactor',
-    notes: 'Check scope handling and token auto-refresh strategy',
-    due: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    status: 'completed',
-    completedDate: new Date().toISOString(),
-  },
-];
-
-export async function listTasks(status?: 'needsAction' | 'completed' | 'all'): Promise<ToolResult> {
+export async function listTasks(status?: 'needsAction' | 'completed' | 'all', sessionId: string = 'default'): Promise<ToolResult> {
   try {
-    let filtered = [...mockTasks];
+    const session = getSession(sessionId);
+    let filtered = [...session.mockTasks];
     if (status && status !== 'all') {
       filtered = filtered.filter((t) => t.status === status);
     }
@@ -38,16 +15,36 @@ export async function listTasks(status?: 'needsAction' | 'completed' | 'all'): P
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to list tasks',
+      error: 'Tasks unavailable. Please check your Google Tasks connection.',
+      errorCode: 'TASKS_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export async function createTask(params: { title: string; notes?: string; due?: string }): Promise<ToolResult> {
+export async function createTask(params: { title: string; notes?: string; due?: string }, sessionId: string = 'default'): Promise<ToolResult> {
   try {
+    const session = getSession(sessionId);
+    if (session.isGuest) {
+      return {
+        success: false,
+        error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+        errorCode: 'GUEST_RESTRICTION',
+        recoverable: true,
+      };
+    }
+
+    if (session.isAuthenticated && !session.tokens?.access_token) {
+      return {
+        success: false,
+        error: 'Authentication expired. Please log in with Google again.',
+        errorCode: 'AUTHENTICATION_EXPIRED',
+        recoverable: true,
+      };
+    }
+
     if (!params.title) {
-      return { success: false, reason: 'Task title is required.', recoverable: true };
+      return { success: false, error: 'Task title is required.', errorCode: 'INVALID_INPUT', recoverable: true };
     }
 
     const newTask: TaskItem = {
@@ -58,7 +55,7 @@ export async function createTask(params: { title: string; notes?: string; due?: 
       status: 'needsAction',
     };
 
-    mockTasks.unshift(newTask);
+    session.mockTasks.unshift(newTask);
 
     return {
       success: true,
@@ -67,22 +64,34 @@ export async function createTask(params: { title: string; notes?: string; due?: 
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to create task',
+      error: 'Tasks unavailable. Please check your Google Tasks connection.',
+      errorCode: 'TASKS_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export async function completeTask(taskId: string): Promise<ToolResult> {
+export async function completeTask(taskId: string, sessionId: string = 'default'): Promise<ToolResult> {
   try {
-    const task = mockTasks.find(
+    const session = getSession(sessionId);
+    if (session.isGuest) {
+      return {
+        success: false,
+        error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+        errorCode: 'GUEST_RESTRICTION',
+        recoverable: true,
+      };
+    }
+
+    const task = session.mockTasks.find(
       (t) => t.id === taskId || t.title.toLowerCase().includes(taskId.toLowerCase())
     );
 
     if (!task) {
       return {
         success: false,
-        reason: `Task "${taskId}" not found to complete.`,
+        error: `Task "${taskId}" not found to complete.`,
+        errorCode: 'NOT_FOUND',
         recoverable: true,
       };
     }
@@ -97,27 +106,39 @@ export async function completeTask(taskId: string): Promise<ToolResult> {
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to complete task',
+      error: 'Tasks unavailable. Please check your Google Tasks connection.',
+      errorCode: 'TASKS_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export async function deleteTask(taskId: string): Promise<ToolResult> {
+export async function deleteTask(taskId: string, sessionId: string = 'default'): Promise<ToolResult> {
   try {
-    const index = mockTasks.findIndex(
+    const session = getSession(sessionId);
+    if (session.isGuest) {
+      return {
+        success: false,
+        error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+        errorCode: 'GUEST_RESTRICTION',
+        recoverable: true,
+      };
+    }
+
+    const index = session.mockTasks.findIndex(
       (t) => t.id === taskId || t.title.toLowerCase().includes(taskId.toLowerCase())
     );
 
     if (index === -1) {
       return {
         success: false,
-        reason: `Task "${taskId}" not found to delete.`,
+        error: `Task "${taskId}" not found to delete.`,
+        errorCode: 'NOT_FOUND',
         recoverable: true,
       };
     }
 
-    const [deleted] = mockTasks.splice(index, 1);
+    const [deleted] = session.mockTasks.splice(index, 1);
 
     return {
       success: true,
@@ -126,12 +147,15 @@ export async function deleteTask(taskId: string): Promise<ToolResult> {
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to delete task',
+      error: 'Tasks unavailable. Please check your Google Tasks connection.',
+      errorCode: 'TASKS_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export function restoreDeletedTask(task: TaskItem): void {
-  mockTasks.unshift(task);
+export function restoreDeletedTask(task: TaskItem, sessionId: string = 'default'): void {
+  const session = getSession(sessionId);
+  session.mockTasks.unshift(task);
 }
+

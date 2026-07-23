@@ -13,6 +13,7 @@ import authStatusHandler from "../api/auth/status";
 import authUrlHandler from "../api/auth/url";
 import authCallbackHandler from "../api/auth/callback";
 import authLogoutHandler from "../api/auth/logout";
+import authGuestHandler from "../api/auth/guest";
 
 import calendarListHandler from "../api/calendar/list";
 import calendarCreateHandler from "../api/calendar/create";
@@ -61,6 +62,7 @@ export function createApp() {
   app.get("/api/auth/url", wrap(authUrlHandler));
   app.get("/api/auth/callback", wrap(authCallbackHandler));
   app.post("/api/auth/logout", wrap(authLogoutHandler));
+  app.post("/api/auth/guest", wrap(authGuestHandler));
 
   app.get("/api/calendar/list", wrap(calendarListHandler));
   app.post("/api/calendar/create", wrap(calendarCreateHandler));

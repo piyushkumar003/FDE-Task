@@ -1,24 +1,16 @@
 import { google } from 'googleapis';
+import { getSession, setSessionAuthenticated, setSessionGuestMode, logoutSession } from './memory';
 
 export interface AuthState {
   authenticated: boolean;
+  isGuest: boolean;
   user?: {
+    id: string;
     name: string;
     email: string;
     picture?: string;
   };
-  tokens?: any;
 }
-
-// Global in-memory auth state for session
-let currentAuthState: AuthState = {
-  authenticated: true, // Default to enabled for smooth preview
-  user: {
-    name: 'Piyush Sharma',
-    email: 'piyushwc@gmail.com',
-    picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-  },
-};
 
 export function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID || 'dummy-client-id';
@@ -28,8 +20,13 @@ export function getOAuth2Client() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
-export function getAuthStatus(): AuthState {
-  return currentAuthState;
+export function getAuthStatus(sessionId: string = 'default'): AuthState {
+  const session = getSession(sessionId);
+  return {
+    authenticated: session.isAuthenticated,
+    isGuest: session.isGuest,
+    user: session.user,
+  };
 }
 
 export function generateAuthUrl(): string {
@@ -51,7 +48,7 @@ export function generateAuthUrl(): string {
   });
 }
 
-export async function handleAuthCallback(code: string): Promise<AuthState> {
+export async function handleAuthCallback(code: string, sessionId: string = 'default'): Promise<AuthState> {
   try {
     const oauth2Client = getOAuth2Client();
     const { tokens } = await oauth2Client.getToken(code);
@@ -60,27 +57,40 @@ export async function handleAuthCallback(code: string): Promise<AuthState> {
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const userInfo = await oauth2.userinfo.get();
 
-    currentAuthState = {
-      authenticated: true,
-      user: {
-        name: userInfo.data.name || 'Google User',
-        email: userInfo.data.email || '',
-        picture: userInfo.data.picture || undefined,
-      },
-      tokens,
+    const user = {
+      id: userInfo.data.id || `google-${Date.now()}`,
+      name: userInfo.data.name || 'Google User',
+      email: userInfo.data.email || '',
+      picture: userInfo.data.picture || undefined,
     };
 
-    return currentAuthState;
-  } catch (error) {
+    setSessionAuthenticated(sessionId, user, tokens);
+
+    return {
+      authenticated: true,
+      isGuest: false,
+      user,
+    };
+  } catch (error: any) {
     console.error('Error handling Google OAuth callback:', error);
-    // Fallback to active preview session
-    currentAuthState.authenticated = true;
-    return currentAuthState;
+    throw new Error(error?.message || 'Failed to authenticate with Google');
   }
 }
 
-export function logoutUser(): void {
-  currentAuthState = {
+export function handleGuestLogin(sessionId: string = 'default'): AuthState {
+  const session = setSessionGuestMode(sessionId, true);
+  return {
     authenticated: false,
+    isGuest: true,
+    user: session.user,
   };
 }
+
+export function logoutUser(sessionId: string = 'default'): AuthState {
+  logoutSession(sessionId);
+  return {
+    authenticated: false,
+    isGuest: false,
+  };
+}
+

@@ -5,11 +5,16 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { code } = req.body || {};
+  const { code, sessionId = 'default' } = req.body || {};
   if (!code) {
     return res.status(400).json({ error: 'Code is required' });
   }
 
-  const authState = await handleAuthCallback(code);
-  return res.json(authState);
+  try {
+    const authState = await handleAuthCallback(code, sessionId);
+    return res.json(authState);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || 'Authentication failed' });
+  }
 }
+

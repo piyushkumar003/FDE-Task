@@ -1,4 +1,4 @@
-import { logoutUser } from '../../server/auth';
+import { handleGuestLogin } from '../../server/auth';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
@@ -6,7 +6,6 @@ export default async function handler(req: any, res: any) {
   }
 
   const { sessionId = 'default' } = req.body || {};
-  const authState = logoutUser(sessionId);
-  return res.json({ success: true, authState });
+  const authState = handleGuestLogin(sessionId);
+  return res.json(authState);
 }
-

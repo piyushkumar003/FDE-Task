@@ -330,12 +330,13 @@ export async function processUserMessage(
 
       responseText = `Calendar event created successfully:\n\n📅 **${evt.summary}**\n🕒 **Time:** ${formattedStart}\n📍 **Location:** ${evt.location || 'Google Meet'}\n${evt.attendees?.length ? `👥 **Attendees:** ${evt.attendees.map((a: any) => a.email).join(', ')}` : ''}`;
     } else {
-      if (toolResult.errorCode === 'ALREADY_ADDED' || toolResult.reason?.toLowerCase().includes('already added')) {
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      if (toolResult.errorCode === 'ALREADY_ADDED' || errReason.toLowerCase().includes('already added')) {
         responseText = 'already added';
-      } else if (toolResult.errorCode === 'SLOT_OVERLAP' || toolResult.reason?.toLowerCase().includes('overlapping with')) {
-        responseText = toolResult.reason;
+      } else if (toolResult.errorCode === 'SLOT_OVERLAP' || errReason.toLowerCase().includes('overlapping with')) {
+        responseText = errReason;
       } else {
-        responseText = `I couldn't create the event: ${toolResult.reason}`;
+        responseText = `I couldn't create the event: ${errReason}`;
       }
     }
   } else if (currentIntent === 'calendar.read') {
@@ -393,12 +394,13 @@ export async function processUserMessage(
       });
       responseText = `Meeting updated successfully:\n\n📅 **${updated.summary}** moved to **${formatted}**.`;
     } else {
-      if (toolResult.errorCode === 'ALREADY_ADDED' || toolResult.reason?.toLowerCase().includes('already added')) {
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      if (toolResult.errorCode === 'ALREADY_ADDED' || errReason.toLowerCase().includes('already added')) {
         responseText = 'already added';
-      } else if (toolResult.errorCode === 'SLOT_OVERLAP' || toolResult.reason?.toLowerCase().includes('overlapping with')) {
-        responseText = toolResult.reason;
+      } else if (toolResult.errorCode === 'SLOT_OVERLAP' || errReason.toLowerCase().includes('overlapping with')) {
+        responseText = errReason;
       } else {
-        responseText = `I couldn't find a matching event to update. ${toolResult.reason}`;
+        responseText = `I couldn't find a matching event to update. ${errReason}`;
       }
     }
   } else if (currentIntent === 'calendar.delete') {
@@ -426,7 +428,8 @@ export async function processUserMessage(
       });
       responseText = `Successfully cancelled event: **${deleted.summary}**.`;
     } else {
-      responseText = `Unable to delete event: ${toolResult.reason}`;
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      responseText = `Unable to delete event: ${errReason}`;
     }
   } else if (currentIntent === 'tasks.create') {
     const title = entities.title || 'Submit report';
@@ -455,7 +458,8 @@ export async function processUserMessage(
       const formattedDue = new Date(task.due).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
       responseText = `Task created in Google Tasks:\n\n✅ **${task.title}**\n📅 **Due:** ${formattedDue}`;
     } else {
-      responseText = `Failed to create task: ${toolResult.reason}`;
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      responseText = `Failed to create task: ${errReason}`;
     }
   } else if (currentIntent === 'tasks.complete') {
     const taskQuery = entities.taskId || 'grocery';
@@ -475,7 +479,8 @@ export async function processUserMessage(
       agendaUpdateNeeded = true;
       responseText = `Marked task **${toolResult.data.title}** as completed! 🎉`;
     } else {
-      responseText = `Could not find matching task to complete: ${toolResult.reason}`;
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      responseText = `Could not find matching task to complete: ${errReason}`;
     }
   } else if (currentIntent === 'tasks.read') {
     toolCalls.push({
@@ -550,7 +555,8 @@ export async function processUserMessage(
       const draft = toolResult.data;
       responseText = `Email draft successfully created in Gmail:\n\n✉️ **To:** \`${draft.to}\`\n📝 **Subject:** ${draft.subject}\n📄 **Body:**\n${draft.body}\n\n*The draft has been created and saved in Gmail.*`;
     } else {
-      responseText = `Failed to create email draft: ${toolResult.reason}`;
+      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
+      responseText = `Failed to create email draft: ${errReason}`;
     }
   } else if (currentIntent === 'contacts.search') {
     const query = userQuery.replace(/find|contact|email|phone|for/gi, '').trim() || 'John';
@@ -596,6 +602,28 @@ export async function processUserMessage(
 
     if (q.includes('hi') || q.includes('hello') || q.includes('hey') || q === 'hi' || q === 'hello') {
       responseText = "Hello! 👋 I'm Nexus, your Google Workspace AI Assistant. How can I help you today with your Calendar, Tasks, Gmail, Contacts, or Google Drive?";
+      handledLocally = true;
+    } else if (q.includes('route') || q.includes('direction') || q.includes('how to get') || q.includes('navigate') || q.includes('map') || q.includes('dentist')) {
+      // Fetch calendar events to find dentist or destination location
+      const eventsResult = await listEvents();
+      let foundEvent = null;
+      if (eventsResult.success && eventsResult.data) {
+        foundEvent = eventsResult.data.find((e: any) => 
+          e.summary.toLowerCase().includes('dentist') || 
+          e.summary.toLowerCase().includes(q.replace(/route|direction|how to get|navigate|to|the|for/gi, '').trim())
+        ) || eventsResult.data.find((e: any) => e.summary.toLowerCase().includes('dentist'));
+      }
+
+      const destination = foundEvent?.location || (foundEvent?.summary ? `${foundEvent.summary} Clinic` : 'Dentist Clinic');
+      const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+      const mapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
+
+      responseText = `🗺️ **Navigation & Route for Dentist**\n\n` +
+        (foundEvent ? `Found matching appointment in your Google Calendar:\n📅 **${foundEvent.summary}**\n🕒 **Time:** ${new Date(foundEvent.start).toLocaleString()}\n📍 **Location:** ${foundEvent.location || 'Dental Clinic'}\n\n` : `Looking up route to **${destination}**:\n\n`) +
+        `You can instantly open Google Maps for turn-by-turn navigation, transit routes, and live traffic updates:\n\n` +
+        `[🧭 Open Directions in Google Maps](${mapsUrl})\n` +
+        `[📍 Search Location on Map](${mapsSearchUrl})`;
+      
       handledLocally = true;
     } else if (q.includes('what can you do') || q.includes('help') || q.includes('features') || q.includes('capabilities') || q.includes('what are you')) {
       responseText = "Here is what I can do for you across **Google Workspace**:\n\n" +

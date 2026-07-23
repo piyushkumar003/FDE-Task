@@ -59,9 +59,11 @@ export interface ToolResult {
   success: boolean;
   data?: any;
   reason?: string;
+  error?: string;
   recoverable?: boolean;
   errorCode?: string;
 }
+
 
 export interface MessageAction {
   type: 'undo' | 'confirm' | 'link' | 'view_event' | 'view_task';

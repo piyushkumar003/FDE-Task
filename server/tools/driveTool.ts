@@ -1,33 +1,11 @@
 import { DriveDocument, ToolResult } from '../../src/types';
+import { getSession } from '../memory';
 
-let mockDocs: DriveDocument[] = [
-  {
-    id: 'doc-1',
-    name: 'Q3 Product Strategy Roadmap.gdoc',
-    mimeType: 'application/vnd.google-apps.document',
-    modifiedTime: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
-    webViewLink: 'https://docs.google.com/document/d/doc-1/edit',
-  },
-  {
-    id: 'doc-2',
-    name: 'AI Personal Assistant Architecture Specification.gdoc',
-    mimeType: 'application/vnd.google-apps.document',
-    modifiedTime: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-    webViewLink: 'https://docs.google.com/document/d/doc-2/edit',
-  },
-  {
-    id: 'doc-3',
-    name: 'Q3 Financial Budget Allocations.gsheet',
-    mimeType: 'application/vnd.google-apps.spreadsheet',
-    modifiedTime: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
-    webViewLink: 'https://docs.google.com/spreadsheets/d/doc-3/edit',
-  },
-];
-
-export async function searchDocuments(query: string): Promise<ToolResult> {
+export async function searchDocuments(query: string, sessionId: string = 'default'): Promise<ToolResult> {
   try {
+    const session = getSession(sessionId);
     const q = query.toLowerCase().trim();
-    const matches = mockDocs.filter((d) => d.name.toLowerCase().includes(q));
+    const matches = session.mockDocs.filter((d) => d.name.toLowerCase().includes(q));
 
     return {
       success: true,
@@ -36,8 +14,10 @@ export async function searchDocuments(query: string): Promise<ToolResult> {
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to search Google Drive documents',
+      error: 'Drive unavailable. Please check your Google Drive connection.',
+      errorCode: 'DRIVE_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
+

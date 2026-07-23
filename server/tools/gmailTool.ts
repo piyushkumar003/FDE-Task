@@ -1,40 +1,11 @@
 import { GmailMessage, ToolResult } from '../../src/types';
+import { getSession } from '../memory';
 
-let mockEmails: GmailMessage[] = [
-  {
-    id: 'msg-1',
-    subject: 'Q3 Product Strategy Sync & Agenda Preparation',
-    from: 'sarah.j@company.org',
-    date: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-    snippet: 'Hi Piyush, please review the attached slide deck before our meeting tomorrow. Let me know if you need to adjust the time.',
-    body: `Hi Piyush,
-
-Please review the attached slide deck before our Executive Sync tomorrow at 3 PM. We need to finalize our AI architecture roadmap and review budget allocations.
-
-Let me know if you'd like me to invite Alex or adjust the slot.
-
-Best regards,
-Sarah`,
-  },
-  {
-    id: 'msg-2',
-    subject: 'Report Submission Deadline Extension Request',
-    from: 'john.doe@example.com',
-    date: new Date(Date.now() - 20 * 3600 * 1000).toISOString(),
-    snippet: 'Hi Nexus team, requesting a 2-day grace period for the engineering audit report.',
-    body: `Hi Piyush,
-
-We are putting the final touches on the security and performance audit report. Could we submit it on Monday morning instead of Friday afternoon?
-
-Thanks,
-John`,
-  },
-];
-
-export async function searchEmails(query: string): Promise<ToolResult> {
+export async function searchEmails(query: string, sessionId: string = 'default'): Promise<ToolResult> {
   try {
+    const session = getSession(sessionId);
     const q = query.toLowerCase().trim();
-    const matches = mockEmails.filter(
+    const matches = session.mockEmails.filter(
       (m) =>
         m.subject.toLowerCase().includes(q) ||
         m.from.toLowerCase().includes(q) ||
@@ -49,17 +20,19 @@ export async function searchEmails(query: string): Promise<ToolResult> {
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to search emails',
+      error: 'Gmail unavailable. Please check your Gmail connection.',
+      errorCode: 'GMAIL_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export async function summarizeEmail(emailId: string): Promise<ToolResult> {
+export async function summarizeEmail(emailId: string, sessionId: string = 'default'): Promise<ToolResult> {
   try {
-    const email = mockEmails.find((m) => m.id === emailId || m.subject.toLowerCase().includes(emailId.toLowerCase()));
+    const session = getSession(sessionId);
+    const email = session.mockEmails.find((m) => m.id === emailId || m.subject.toLowerCase().includes(emailId.toLowerCase()));
     if (!email) {
-      return { success: false, reason: `Email matching "${emailId}" not found.`, recoverable: true };
+      return { success: false, error: `Email matching "${emailId}" not found.`, errorCode: 'NOT_FOUND', recoverable: true };
     }
 
     const summary = `**Subject:** ${email.subject}\n**From:** ${email.from}\n**Key Takeaways:**\n- Requesting review or timeline update.\n- Sender: ${email.from.split('@')[0]}\n- Full content snippet: "${email.snippet}"`;
@@ -75,14 +48,25 @@ export async function summarizeEmail(emailId: string): Promise<ToolResult> {
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to summarize email',
+      error: 'Gmail unavailable. Please check your Gmail connection.',
+      errorCode: 'GMAIL_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export async function createDraft(params: { to?: string; subject?: string; body?: string }): Promise<ToolResult> {
+export async function createDraft(params: { to?: string; subject?: string; body?: string }, sessionId: string = 'default'): Promise<ToolResult> {
   try {
+    const session = getSession(sessionId);
+    if (session.isGuest) {
+      return {
+        success: false,
+        error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+        errorCode: 'GUEST_RESTRICTION',
+        recoverable: true,
+      };
+    }
+
     const draft = {
       id: `draft-${Date.now()}`,
       to: params.to || 'recipient@example.com',
@@ -98,17 +82,28 @@ export async function createDraft(params: { to?: string; subject?: string; body?
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to create email draft',
+      error: 'Gmail unavailable. Please check your Gmail connection.',
+      errorCode: 'GMAIL_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
 
-export async function draftReply(params: { emailId: string; body: string }): Promise<ToolResult> {
+export async function draftReply(params: { emailId: string; body: string }, sessionId: string = 'default'): Promise<ToolResult> {
   try {
-    const email = mockEmails.find((m) => m.id === params.emailId || m.subject.toLowerCase().includes(params.emailId.toLowerCase()));
+    const session = getSession(sessionId);
+    if (session.isGuest) {
+      return {
+        success: false,
+        error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+        errorCode: 'GUEST_RESTRICTION',
+        recoverable: true,
+      };
+    }
+
+    const email = session.mockEmails.find((m) => m.id === params.emailId || m.subject.toLowerCase().includes(params.emailId.toLowerCase()));
     if (!email) {
-      return { success: false, reason: `Email "${params.emailId}" not found to draft reply.`, recoverable: true };
+      return { success: false, error: `Email "${params.emailId}" not found to draft reply.`, errorCode: 'NOT_FOUND', recoverable: true };
     }
 
     const draft = {
@@ -126,8 +121,10 @@ export async function draftReply(params: { emailId: string; body: string }): Pro
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to create draft reply',
+      error: 'Gmail unavailable. Please check your Gmail connection.',
+      errorCode: 'GMAIL_UNAVAILABLE',
       recoverable: true,
     };
   }
 }
+

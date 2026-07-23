@@ -42,13 +42,39 @@ export async function fetchMemory(sessionId: string): Promise<MemoryContext> {
   return res.json();
 }
 
-export async function fetchAuthStatus(): Promise<{ authenticated: boolean; user?: any; authUrl?: string }> {
-  const res = await fetch('/api/auth/status');
-  if (!res.ok) {
-    return { authenticated: false };
-  }
+export async function fetchAuthStatus(sessionId: string = 'default') {
+  const res = await fetch(`/api/auth/status?sessionId=${encodeURIComponent(sessionId)}`);
+  if (!res.ok) return { authenticated: false, isGuest: false };
   return res.json();
 }
+
+export async function loginGuest(sessionId: string = 'default') {
+  const res = await fetch('/api/auth/guest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!res.ok) throw new Error('Failed to start guest mode');
+  return res.json();
+}
+
+export async function getGoogleAuthUrl() {
+  const res = await fetch('/api/auth/url');
+  if (!res.ok) throw new Error('Failed to get auth URL');
+  const data = await res.json();
+  return data.url;
+}
+
+export async function logoutApi(sessionId: string = 'default') {
+  const res = await fetch('/api/auth/logout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  });
+  if (!res.ok) throw new Error('Failed to logout');
+  return res.json();
+}
+
 
 export async function undoLastAction(actionId: string, payload: any): Promise<{ success: boolean; message: string }> {
   const res = await fetch('/api/action/undo', {

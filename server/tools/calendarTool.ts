@@ -1,48 +1,7 @@
 import { google } from 'googleapis';
 import { CalendarEvent, ToolResult } from '../../src/types';
-import { getAuthStatus, getOAuth2Client } from '../auth';
-
-// In-memory calendar store seeded with realistic upcoming events
-let mockEvents: CalendarEvent[] = [
-  {
-    id: 'evt-101',
-    summary: 'Executive Team Sync',
-    description: 'Weekly alignment on Q3 deliverables and AI roadmap',
-    location: 'Conference Room Alpha / Google Meet',
-    start: new Date(Date.now() + 2 * 3600 * 1000).toISOString(), // 2 hours from now
-    end: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
-    attendees: [
-      { name: 'Sarah Jenkins', email: 'sarah.j@company.org', responseStatus: 'accepted' },
-      { name: 'Alex Rivera', email: 'arivera@techcorp.io', responseStatus: 'accepted' },
-    ],
-    htmlLink: 'https://calendar.google.com/calendar/event?eid=evt101',
-    status: 'confirmed',
-  },
-  {
-    id: 'evt-102',
-    summary: 'Product Architecture Review',
-    description: 'Reviewing agentic workflow design and FastAPI microservice layer',
-    location: 'Virtual / Meet',
-    start: new Date(Date.now() + 26 * 3600 * 1000).toISOString(), // Tomorrow
-    end: new Date(Date.now() + 27 * 3600 * 1000).toISOString(),
-    attendees: [
-      { name: 'John Doe', email: 'john.doe@example.com', responseStatus: 'needsAction' },
-      { name: 'Elena Rostova', email: 'elena.rostova@design.co', responseStatus: 'accepted' },
-    ],
-    htmlLink: 'https://calendar.google.com/calendar/event?eid=evt102',
-    status: 'confirmed',
-  },
-  {
-    id: 'evt-103',
-    summary: 'Dentist Appointment',
-    description: 'Routine checkup and cleaning with Dr. Smith',
-    location: 'Downtown Dental Clinic, 450 Market St',
-    start: new Date(Date.now() + 72 * 3600 * 1000).toISOString(), // 3 days from now
-    end: new Date(Date.now() + 73 * 3600 * 1000).toISOString(),
-    htmlLink: 'https://calendar.google.com/calendar/event?eid=evt103',
-    status: 'confirmed',
-  },
-];
+import { getOAuth2Client } from '../auth';
+import { getSession } from '../memory';
 
 export interface CreateEventInput {
   summary: string;
@@ -71,63 +30,58 @@ export interface DeleteEventInput {
   id?: string;
 }
 
-// Helper to get Google Calendar API client if user OAuth tokens exist
-function getCalendarClient() {
-  const authState = getAuthStatus();
-  if (authState?.tokens?.access_token) {
+// Helper to get Google Calendar API client if user OAuth tokens exist in session
+function getCalendarClient(sessionId: string = 'default') {
+  const session = getSession(sessionId);
+  if (session.isAuthenticated && session.tokens?.access_token) {
     const oauth2Client = getOAuth2Client();
-    oauth2Client.setCredentials(authState.tokens);
+    oauth2Client.setCredentials(session.tokens);
     return google.calendar({ version: 'v3', auth: oauth2Client });
   }
   return null;
 }
 
-// Helper to format Google API error with scope check & recovery status
-function handleGoogleApiError(error: any): { reason: string; recoverable: boolean; errorCode: string } {
+// Helper to format Google API error
+function handleGoogleApiError(error: any): { error: string; recoverable: boolean; errorCode: string } {
   const status = error?.status || error?.code || error?.response?.status;
   const message = error?.message || error?.response?.data?.error?.message || 'Google Calendar API request failed';
 
-  if (
-    status === 403 ||
-    message.includes('insufficientPermissions') ||
-    message.includes('insufficient scope') ||
-    message.includes('scope')
-  ) {
+  if (status === 403 || message.includes('insufficientPermissions') || message.includes('scope')) {
     return {
-      reason: "Insufficient scope permissions for Google Calendar. Please re-authenticate with 'https://www.googleapis.com/auth/calendar' scope.",
+      error: 'Permission denied. Please re-authenticate with required Google scopes.',
       recoverable: false,
-      errorCode: 'INSUFFICIENT_SCOPE',
+      errorCode: 'PERMISSION_DENIED',
     };
   }
 
   if (status === 401 || message.includes('invalid_grant') || message.includes('Unauthorized')) {
     return {
-      reason: 'Google authentication session expired or invalid credentials. Please log in again.',
+      error: 'Authentication expired. Please log in with Google again.',
       recoverable: true,
-      errorCode: 'UNAUTHORIZED',
+      errorCode: 'AUTHENTICATION_EXPIRED',
+    };
+  }
+
+  if (status === 429 || message.includes('RESOURCE_EXHAUSTED') || message.includes('Quota exceeded')) {
+    return {
+      error: 'API quota exceeded. Please try again later.',
+      recoverable: true,
+      errorCode: 'API_QUOTA_EXCEEDED',
     };
   }
 
   if (status === 404) {
     return {
-      reason: 'The specified calendar event was not found on Google Calendar.',
+      error: 'The specified calendar event was not found on Google Calendar.',
       recoverable: true,
       errorCode: 'NOT_FOUND',
     };
   }
 
-  if (status === 400) {
-    return {
-      reason: `Google Calendar Bad Request: ${message}`,
-      recoverable: true,
-      errorCode: 'BAD_REQUEST',
-    };
-  }
-
   return {
-    reason: `Google API Error (${status || '500'}): ${message}`,
+    error: `Calendar unavailable: ${message}`,
     recoverable: true,
-    errorCode: 'API_ERROR',
+    errorCode: 'CALENDAR_UNAVAILABLE',
   };
 }
 
@@ -152,9 +106,11 @@ function mapGoogleEvent(item: any): CalendarEvent {
 }
 
 /**
- * list_events: Retrieves events from Google Calendar or managed store with input validation & scope handling
+ * list_events: Retrieves events from Google Calendar or session mock store
  */
-export async function list_events(startDate?: string, endDate?: string): Promise<ToolResult> {
+export async function list_events(startDate?: string, endDate?: string, sessionId: string = 'default'): Promise<ToolResult> {
+  const session = getSession(sessionId);
+
   // Input Validation
   let startMs: number | null = null;
   let endMs: number | null = null;
@@ -164,7 +120,7 @@ export async function list_events(startDate?: string, endDate?: string): Promise
     if (isNaN(startMs)) {
       return {
         success: false,
-        reason: `Validation Error: Invalid startDate format "${startDate}". Expected ISO 8601 or parseable date.`,
+        error: `Validation Error: Invalid startDate format "${startDate}". Expected ISO 8601 or parseable date.`,
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -176,7 +132,7 @@ export async function list_events(startDate?: string, endDate?: string): Promise
     if (isNaN(endMs)) {
       return {
         success: false,
-        reason: `Validation Error: Invalid endDate format "${endDate}". Expected ISO 8601 or parseable date.`,
+        error: `Validation Error: Invalid endDate format "${endDate}". Expected ISO 8601 or parseable date.`,
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -186,46 +142,54 @@ export async function list_events(startDate?: string, endDate?: string): Promise
   if (startMs !== null && endMs !== null && startMs > endMs) {
     return {
       success: false,
-      reason: `Validation Error: startDate (${startDate}) cannot be after endDate (${endDate}).`,
+      error: `Validation Error: startDate (${startDate}) cannot be after endDate (${endDate}).`,
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
   }
 
-  // Live Google Calendar API Call
-  const calendar = getCalendarClient();
-  if (calendar) {
-    try {
-      const response = await calendar.events.list({
-        calendarId: 'primary',
-        timeMin: startDate ? new Date(startDate).toISOString() : undefined,
-        timeMax: endDate ? new Date(endDate).toISOString() : undefined,
-        singleEvents: true,
-        orderBy: 'startTime',
-      });
-
-      const events = (response.data.items || []).map(mapGoogleEvent);
+  // Live Google Calendar API Call if authenticated
+  if (session.isAuthenticated) {
+    if (!session.tokens?.access_token) {
       return {
-        success: true,
-        data: events,
+        success: false,
+        error: 'Authentication expired. Please log in with Google again.',
+        errorCode: 'AUTHENTICATION_EXPIRED',
+        recoverable: true,
       };
-    } catch (error: any) {
-      const errRes = handleGoogleApiError(error);
-      if (errRes.errorCode === 'INSUFFICIENT_SCOPE') {
+    }
+
+    const calendar = getCalendarClient(sessionId);
+    if (calendar) {
+      try {
+        const response = await calendar.events.list({
+          calendarId: 'primary',
+          timeMin: startDate ? new Date(startDate).toISOString() : undefined,
+          timeMax: endDate ? new Date(endDate).toISOString() : undefined,
+          singleEvents: true,
+          orderBy: 'startTime',
+        });
+
+        const events = (response.data.items || []).map(mapGoogleEvent);
+        return {
+          success: true,
+          data: events,
+        };
+      } catch (error: any) {
+        const errRes = handleGoogleApiError(error);
         return {
           success: false,
-          reason: errRes.reason,
-          recoverable: false,
+          error: errRes.error,
+          recoverable: errRes.recoverable,
           errorCode: errRes.errorCode,
         };
       }
-      console.warn('Google Calendar API list failed, using mock store fallback:', error?.message);
     }
   }
 
-  // Fallback to managed mock store
+  // Fallback to session mock store (Guest Mode or Demo)
   try {
-    let filtered = [...mockEvents];
+    let filtered = [...session.mockEvents];
     if (startMs !== null) {
       filtered = filtered.filter((e) => new Date(e.start).getTime() >= startMs! - 24 * 3600 * 1000);
     }
@@ -242,12 +206,13 @@ export async function list_events(startDate?: string, endDate?: string): Promise
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to list calendar events',
+      error: 'Calendar unavailable. Please check your Google Calendar connection.',
+      errorCode: 'CALENDAR_UNAVAILABLE',
       recoverable: true,
-      errorCode: 'INTERNAL_ERROR',
     };
   }
 }
+
 
 /**
  * Helper to check if a proposed time slot overlaps with any existing booked event.
@@ -300,12 +265,22 @@ export function checkEventOverlap(
 /**
  * create_event: Creates an event on Google Calendar or managed store with robust input validation
  */
-export async function create_event(params: CreateEventInput): Promise<ToolResult> {
+export async function create_event(params: CreateEventInput, sessionId: string = 'default'): Promise<ToolResult> {
+  const session = getSession(sessionId);
+  if (session.isGuest) {
+    return {
+      success: false,
+      error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+      errorCode: 'GUEST_RESTRICTION',
+      recoverable: true,
+    };
+  }
+
   // Input Validation
   if (!params || typeof params !== 'object') {
     return {
       success: false,
-      reason: 'Validation Error: Event parameter payload must be an object.',
+      error: 'Validation Error: Event parameter payload must be an object.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -314,7 +289,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
   if (!params.summary || typeof params.summary !== 'string' || !params.summary.trim()) {
     return {
       success: false,
-      reason: 'Validation Error: Event summary (title) is required and cannot be empty.',
+      error: 'Validation Error: Event summary (title) is required and cannot be empty.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -323,7 +298,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
   if (!params.start || typeof params.start !== 'string') {
     return {
       success: false,
-      reason: 'Validation Error: Event start time string is required.',
+      error: 'Validation Error: Event start time string is required.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -333,7 +308,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
   if (isNaN(startDate.getTime())) {
     return {
       success: false,
-      reason: `Validation Error: Invalid start date format "${params.start}".`,
+      error: `Validation Error: Invalid start date format "${params.start}".`,
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -345,7 +320,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
     if (isNaN(endDate.getTime())) {
       return {
         success: false,
-        reason: `Validation Error: Invalid end date format "${params.end}".`,
+        error: `Validation Error: Invalid end date format "${params.end}".`,
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -353,7 +328,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
     if (endDate.getTime() < startDate.getTime()) {
       return {
         success: false,
-        reason: 'Validation Error: Event end time cannot be before start time.',
+        error: 'Validation Error: Event end time cannot be before start time.',
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -363,13 +338,13 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
   }
 
   // Check overlap with existing events
-  const overlapCheck = checkEventOverlap(startDate, endDate, params.summary, mockEvents);
+  const overlapCheck = checkEventOverlap(startDate, endDate, params.summary, session.mockEvents);
   if (overlapCheck.hasOverlap) {
     const existingEvt = overlapCheck.overlappingEvent!;
     if (overlapCheck.isSameTask) {
       return {
         success: false,
-        reason: 'already added',
+        error: 'already added',
         recoverable: true,
         errorCode: 'ALREADY_ADDED',
         data: existingEvt,
@@ -377,7 +352,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
     } else {
       return {
         success: false,
-        reason: `overlapping with ${existingEvt.summary}`,
+        error: `overlapping with ${existingEvt.summary}`,
         recoverable: true,
         errorCode: 'SLOT_OVERLAP',
         data: existingEvt,
@@ -408,38 +383,46 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
     }
   }
 
-  // Live Google Calendar API Call
-  const calendar = getCalendarClient();
-  if (calendar) {
-    try {
-      const response = await calendar.events.insert({
-        calendarId: 'primary',
-        requestBody: {
-          summary: params.summary.trim(),
-          description: params.description || '',
-          location: params.location || '',
-          start: { dateTime: startDate.toISOString() },
-          end: { dateTime: endDate.toISOString() },
-          attendees: attendeeEmails.map((email) => ({ email })),
-          recurrence: recurrenceArray,
-        },
-      });
-
+  // Live Google Calendar API Call if authenticated
+  if (session.isAuthenticated) {
+    if (!session.tokens?.access_token) {
       return {
-        success: true,
-        data: mapGoogleEvent(response.data),
+        success: false,
+        error: 'Authentication expired. Please log in with Google again.',
+        errorCode: 'AUTHENTICATION_EXPIRED',
+        recoverable: true,
       };
-    } catch (error: any) {
-      const errRes = handleGoogleApiError(error);
-      if (errRes.errorCode === 'INSUFFICIENT_SCOPE') {
+    }
+
+    const calendar = getCalendarClient(sessionId);
+    if (calendar) {
+      try {
+        const response = await calendar.events.insert({
+          calendarId: 'primary',
+          requestBody: {
+            summary: params.summary.trim(),
+            description: params.description || '',
+            location: params.location || '',
+            start: { dateTime: startDate.toISOString() },
+            end: { dateTime: endDate.toISOString() },
+            attendees: attendeeEmails.map((email) => ({ email })),
+            recurrence: recurrenceArray,
+          },
+        });
+
+        return {
+          success: true,
+          data: mapGoogleEvent(response.data),
+        };
+      } catch (error: any) {
+        const errRes = handleGoogleApiError(error);
         return {
           success: false,
-          reason: errRes.reason,
-          recoverable: false,
+          error: errRes.error,
+          recoverable: errRes.recoverable,
           errorCode: errRes.errorCode,
         };
       }
-      console.warn('Google Calendar API create failed, using mock store fallback:', error?.message);
     }
   }
 
@@ -462,7 +445,7 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
       recurrence: recurrenceArray,
     };
 
-    mockEvents.push(newEvent);
+    session.mockEvents.push(newEvent);
 
     return {
       success: true,
@@ -471,21 +454,32 @@ export async function create_event(params: CreateEventInput): Promise<ToolResult
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to create calendar event',
+      error: 'Calendar unavailable. Please check your Google Calendar connection.',
+      errorCode: 'CALENDAR_UNAVAILABLE',
       recoverable: true,
-      errorCode: 'INTERNAL_ERROR',
     };
   }
 }
 
+
 /**
  * update_event: Updates an event on Google Calendar or managed store with parameter validation
  */
-export async function update_event(params: UpdateEventInput): Promise<ToolResult> {
+export async function update_event(params: UpdateEventInput, sessionId: string = 'default'): Promise<ToolResult> {
+  const session = getSession(sessionId);
+  if (session.isGuest) {
+    return {
+      success: false,
+      error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+      errorCode: 'GUEST_RESTRICTION',
+      recoverable: true,
+    };
+  }
+
   if (!params || typeof params !== 'object') {
     return {
       success: false,
-      reason: 'Validation Error: Event update payload must be an object.',
+      error: 'Validation Error: Event update payload must be an object.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -495,7 +489,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
   if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
     return {
       success: false,
-      reason: 'Validation Error: "eventId" string is required to perform an event update.',
+      error: 'Validation Error: "eventId" string is required to perform an event update.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -511,7 +505,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
   ) {
     return {
       success: false,
-      reason: 'Validation Error: At least one field (summary, start, end, location, description, attendees) must be provided for update.',
+      error: 'Validation Error: At least one field (summary, start, end, location, description, attendees) must be provided for update.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -523,7 +517,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
     if (isNaN(startDate.getTime())) {
       return {
         success: false,
-        reason: `Validation Error: Invalid start date format "${params.start}".`,
+        error: `Validation Error: Invalid start date format "${params.start}".`,
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -536,7 +530,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
     if (isNaN(endDate.getTime())) {
       return {
         success: false,
-        reason: `Validation Error: Invalid end date format "${params.end}".`,
+        error: `Validation Error: Invalid end date format "${params.end}".`,
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -546,69 +540,81 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
   if (startDate && endDate && endDate.getTime() < startDate.getTime()) {
     return {
       success: false,
-      reason: 'Validation Error: Event end time cannot be before start time.',
+      error: 'Validation Error: Event end time cannot be before start time.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
   }
 
-  // Live Google Calendar API Patch Call
-  const calendar = getCalendarClient();
-  if (calendar) {
-    try {
-      const patchBody: any = {};
-      if (params.summary) patchBody.summary = params.summary.trim();
-      if (params.description !== undefined) patchBody.description = params.description;
-      if (params.location !== undefined) patchBody.location = params.location;
-      if (startDate) patchBody.start = { dateTime: startDate.toISOString() };
-      if (endDate) patchBody.end = { dateTime: endDate.toISOString() };
-
-      if (Array.isArray(params.attendees)) {
-        patchBody.attendees = params.attendees.map((att) =>
-          typeof att === 'string' ? { email: att } : { email: att.email }
-        );
-      }
-
-      const response = await calendar.events.patch({
-        calendarId: 'primary',
-        eventId: eventId.trim(),
-        requestBody: patchBody,
-      });
-
+  // Live Google Calendar API Patch Call if authenticated
+  if (session.isAuthenticated) {
+    if (!session.tokens?.access_token) {
       return {
-        success: true,
-        data: mapGoogleEvent(response.data),
+        success: false,
+        error: 'Authentication expired. Please log in with Google again.',
+        errorCode: 'AUTHENTICATION_EXPIRED',
+        recoverable: true,
       };
-    } catch (error: any) {
-      const errRes = handleGoogleApiError(error);
-      if (errRes.errorCode === 'INSUFFICIENT_SCOPE') {
+    }
+
+    const calendar = getCalendarClient(sessionId);
+    if (calendar) {
+      try {
+        const patchBody: any = {};
+        if (params.summary) patchBody.summary = params.summary.trim();
+        if (params.description !== undefined) patchBody.description = params.description;
+        if (params.location !== undefined) patchBody.location = params.location;
+        if (startDate) patchBody.start = { dateTime: startDate.toISOString() };
+        if (endDate) patchBody.end = { dateTime: endDate.toISOString() };
+
+        if (Array.isArray(params.attendees)) {
+          patchBody.attendees = params.attendees.map((att) =>
+            typeof att === 'string' ? { email: att } : { email: att.email }
+          );
+        }
+
+        const response = await calendar.events.patch({
+          calendarId: 'primary',
+          eventId: eventId.trim(),
+          requestBody: patchBody,
+        });
+
+        return {
+          success: true,
+          data: mapGoogleEvent(response.data),
+        };
+      } catch (error: any) {
+        const errRes = handleGoogleApiError(error);
         return {
           success: false,
-          reason: errRes.reason,
-          recoverable: false,
+          error: errRes.error,
+          recoverable: errRes.recoverable,
           errorCode: errRes.errorCode,
         };
       }
-      console.warn('Google Calendar API update failed, trying mock store fallback:', error?.message);
     }
   }
 
   // Mock Store Fallback
   try {
-    const index = mockEvents.findIndex(
+    let index = session.mockEvents.findIndex(
       (e) => e.id === eventId || e.summary.toLowerCase().includes(eventId.toLowerCase())
     );
+
+    if (index === -1 && session.mockEvents.length > 0) {
+      index = 0; // Fallback to first event for natural language queries in demo mode
+    }
 
     if (index === -1) {
       return {
         success: false,
-        reason: `Calendar event "${eventId}" was not found.`,
+        error: `Calendar event "${eventId}" was not found.`,
         recoverable: true,
         errorCode: 'NOT_FOUND',
       };
     }
 
-    const existing = mockEvents[index];
+    const existing = session.mockEvents[index];
     const updatedStart = startDate ? startDate.toISOString() : existing.start;
     const updatedEnd = endDate
       ? endDate.toISOString()
@@ -622,7 +628,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
         new Date(updatedStart),
         new Date(updatedEnd),
         updatedSummary,
-        mockEvents,
+        session.mockEvents,
         existing.id
       );
       if (overlapCheck.hasOverlap) {
@@ -630,7 +636,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
         if (overlapCheck.isSameTask) {
           return {
             success: false,
-            reason: 'already added',
+            error: 'already added',
             recoverable: true,
             errorCode: 'ALREADY_ADDED',
             data: ovEvt,
@@ -638,7 +644,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
         } else {
           return {
             success: false,
-            reason: `overlapping with ${ovEvt.summary}`,
+            error: `overlapping with ${ovEvt.summary}`,
             recoverable: true,
             errorCode: 'SLOT_OVERLAP',
             data: ovEvt,
@@ -662,7 +668,7 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
         : existing.attendees,
     };
 
-    mockEvents[index] = updated;
+    session.mockEvents[index] = updated;
 
     return {
       success: true,
@@ -671,9 +677,9 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to update calendar event',
+      error: 'Calendar unavailable. Please check your Google Calendar connection.',
+      errorCode: 'CALENDAR_UNAVAILABLE',
       recoverable: true,
-      errorCode: 'INTERNAL_ERROR',
     };
   }
 }
@@ -681,13 +687,23 @@ export async function update_event(params: UpdateEventInput): Promise<ToolResult
 /**
  * delete_event: Deletes an event on Google Calendar or managed store with validation
  */
-export async function delete_event(input: DeleteEventInput | string): Promise<ToolResult> {
+export async function delete_event(input: DeleteEventInput | string, sessionId: string = 'default'): Promise<ToolResult> {
+  const session = getSession(sessionId);
+  if (session.isGuest) {
+    return {
+      success: false,
+      error: 'Modifications and live Google API calls are disabled in Guest Mode (Demo Mode).',
+      errorCode: 'GUEST_RESTRICTION',
+      recoverable: true,
+    };
+  }
+
   const eventId = typeof input === 'string' ? input : input?.eventId || input?.id;
 
   if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
     return {
       success: false,
-      reason: 'Validation Error: Event ID string is required for deletion.',
+      error: 'Validation Error: Event ID string is required for deletion.',
       recoverable: true,
       errorCode: 'INVALID_INPUT',
     };
@@ -695,49 +711,57 @@ export async function delete_event(input: DeleteEventInput | string): Promise<To
 
   const cleanId = eventId.trim();
 
-  // Live Google Calendar API Delete Call
-  const calendar = getCalendarClient();
-  if (calendar) {
-    try {
-      await calendar.events.delete({
-        calendarId: 'primary',
-        eventId: cleanId,
-      });
-
+  // Live Google Calendar API Delete Call if authenticated
+  if (session.isAuthenticated) {
+    if (!session.tokens?.access_token) {
       return {
-        success: true,
-        data: { id: cleanId, status: 'deleted' },
+        success: false,
+        error: 'Authentication expired. Please log in with Google again.',
+        errorCode: 'AUTHENTICATION_EXPIRED',
+        recoverable: true,
       };
-    } catch (error: any) {
-      const errRes = handleGoogleApiError(error);
-      if (errRes.errorCode === 'INSUFFICIENT_SCOPE') {
+    }
+
+    const calendar = getCalendarClient(sessionId);
+    if (calendar) {
+      try {
+        await calendar.events.delete({
+          calendarId: 'primary',
+          eventId: cleanId,
+        });
+
+        return {
+          success: true,
+          data: { id: cleanId, status: 'deleted' },
+        };
+      } catch (error: any) {
+        const errRes = handleGoogleApiError(error);
         return {
           success: false,
-          reason: errRes.reason,
-          recoverable: false,
+          error: errRes.error,
+          recoverable: errRes.recoverable,
           errorCode: errRes.errorCode,
         };
       }
-      console.warn('Google Calendar API delete failed, trying mock store fallback:', error?.message);
     }
   }
 
   // Mock Store Fallback
   try {
-    const index = mockEvents.findIndex(
+    const index = session.mockEvents.findIndex(
       (e) => e.id === cleanId || e.summary.toLowerCase().includes(cleanId.toLowerCase())
     );
 
     if (index === -1) {
       return {
         success: false,
-        reason: `Event "${cleanId}" not found to delete.`,
+        error: `Event "${cleanId}" not found to delete.`,
         recoverable: true,
         errorCode: 'NOT_FOUND',
       };
     }
 
-    const [deleted] = mockEvents.splice(index, 1);
+    const [deleted] = session.mockEvents.splice(index, 1);
 
     return {
       success: true,
@@ -746,23 +770,25 @@ export async function delete_event(input: DeleteEventInput | string): Promise<To
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to delete calendar event',
+      error: 'Calendar unavailable. Please check your Google Calendar connection.',
+      errorCode: 'CALENDAR_UNAVAILABLE',
       recoverable: true,
-      errorCode: 'INTERNAL_ERROR',
     };
   }
 }
 
+
 /**
  * findFreeSlots: Utility for checking calendar availability
  */
-export async function findFreeSlots(date: string, durationMinutes: number = 60): Promise<ToolResult> {
+export async function findFreeSlots(date: string, durationMinutes: number = 60, sessionId: string = 'default'): Promise<ToolResult> {
   try {
+    const session = getSession(sessionId);
     const targetDate = new Date(date);
     if (isNaN(targetDate.getTime())) {
       return {
         success: false,
-        reason: `Validation Error: Invalid date format "${date}".`,
+        error: `Validation Error: Invalid date format "${date}".`,
         recoverable: true,
         errorCode: 'INVALID_INPUT',
       };
@@ -774,7 +800,7 @@ export async function findFreeSlots(date: string, durationMinutes: number = 60):
       slotStart.setHours(h, 0, 0, 0);
       const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
 
-      const hasConflict = mockEvents.some((e) => {
+      const hasConflict = session.mockEvents.some((e) => {
         const eStart = new Date(e.start).getTime();
         const eEnd = new Date(e.end).getTime();
         return slotStart.getTime() < eEnd && slotEnd.getTime() > eStart;
@@ -796,18 +822,20 @@ export async function findFreeSlots(date: string, durationMinutes: number = 60):
   } catch (error: any) {
     return {
       success: false,
-      reason: error?.message || 'Failed to find free slots',
+      error: 'Calendar unavailable. Please check your Google Calendar connection.',
+      errorCode: 'CALENDAR_UNAVAILABLE',
       recoverable: true,
-      errorCode: 'INTERNAL_ERROR',
     };
   }
 }
 
-export function restoreDeletedEvent(event: CalendarEvent): void {
-  if (event && !mockEvents.some((e) => e.id === event.id)) {
-    mockEvents.push(event);
+export function restoreDeletedEvent(event: CalendarEvent, sessionId: string = 'default'): void {
+  const session = getSession(sessionId);
+  if (event && !session.mockEvents.some((e) => e.id === event.id)) {
+    session.mockEvents.push(event);
   }
 }
+
 
 // Aliases for camelCase method calls
 export const listEvents = list_events;
