@@ -1,6 +1,7 @@
 import React from 'react';
 import { CalendarEvent, TaskItem } from '../types';
-import { Calendar, CheckSquare, Clock, MapPin, Users, X, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Calendar, CheckSquare, Clock, MapPin, Users, X, RefreshCw, CheckCircle2, BarChart3 } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 interface AgendaSidebarProps {
   isOpen: boolean;
@@ -20,6 +21,43 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
   onQuickPrompt,
 }) => {
   if (!isOpen) return null;
+
+  const chartData = React.useMemo(() => {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const counts: { [key: string]: { day: string; meetings: number; tasks: number } } = {
+      'Mon': { day: 'Mon', meetings: 0, tasks: 0 },
+      'Tue': { day: 'Tue', meetings: 0, tasks: 0 },
+      'Wed': { day: 'Wed', meetings: 0, tasks: 0 },
+      'Thu': { day: 'Thu', meetings: 0, tasks: 0 },
+      'Fri': { day: 'Fri', meetings: 0, tasks: 0 },
+      'Sat': { day: 'Sat', meetings: 0, tasks: 0 },
+      'Sun': { day: 'Sun', meetings: 0, tasks: 0 },
+    };
+
+    events.forEach(evt => {
+      if (evt.start) {
+        const d = new Date(evt.start);
+        const dayStr = dayNames[d.getDay()];
+        if (counts[dayStr]) {
+          counts[dayStr].meetings += 1;
+        }
+      }
+    });
+
+    tasks.forEach(t => {
+      if (t.due) {
+        const d = new Date(t.due);
+        const dayStr = dayNames[d.getDay()];
+        if (counts[dayStr]) {
+          counts[dayStr].tasks += 1;
+        }
+      } else {
+        counts['Mon'].tasks += 1;
+      }
+    });
+
+    return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => counts[d]);
+  }, [events, tasks]);
 
   return (
     <div id="agenda-sidebar-overlay" className="fixed inset-0 z-40 bg-zinc-950/70 backdrop-blur-xs flex justify-end">
@@ -56,6 +94,35 @@ export const AgendaSidebar: React.FC<AgendaSidebarProps> = ({
 
         {/* Feed Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+          {/* Weekly Distribution Chart */}
+          <div className="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
+                Weekly Distribution
+              </h3>
+              <span className="text-[10px] font-mono bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                Tasks vs Meetings
+              </span>
+            </div>
+            <div className="h-44 w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                  <XAxis dataKey="day" stroke="#a1a1aa" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#a1a1aa" fontSize={10} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '8px', fontSize: '11px', color: '#f4f4f5' }}
+                    cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '6px' }} />
+                  <Bar dataKey="meetings" name="Meetings" fill="#60a5fa" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="tasks" name="Tasks" fill="#34d399" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           {/* Calendar Section */}
           <div>
             <div className="flex items-center justify-between mb-3">
