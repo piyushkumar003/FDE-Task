@@ -64,6 +64,8 @@ export interface ToolResult {
   error?: string;
   recoverable?: boolean;
   errorCode?: string;
+  hiddenEvents?: any[];
+  hiddenCounts?: any;
 }
 
 

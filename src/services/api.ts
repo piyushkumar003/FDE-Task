@@ -100,3 +100,51 @@ export async function undoLastAction(actionId: string, payload: any): Promise<{ 
   }
   return res.json();
 }
+
+export async function deleteCalendarEvent(eventId: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  const res = await fetch(`/api/calendar/event/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to delete event' }));
+    throw new Error(err.error || 'Failed to delete event');
+  }
+  return res.json();
+}
+
+export async function updateCalendarEvent(eventId: string, data: any): Promise<{ success: boolean; data?: any; error?: string }> {
+  const res = await fetch(`/api/calendar/event/${encodeURIComponent(eventId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to update event' }));
+    throw new Error(err.error || 'Failed to update event');
+  }
+  return res.json();
+}
+
+export async function updateTask(taskId: string, data: any): Promise<{ success: boolean; data?: any; error?: string }> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to update task' }));
+    throw new Error(err.error || 'Failed to update task');
+  }
+  return res.json();
+}
+
+export async function deleteTask(taskId: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to delete task' }));
+    throw new Error(err.error || 'Failed to delete task');
+  }
+  return res.json();
+}

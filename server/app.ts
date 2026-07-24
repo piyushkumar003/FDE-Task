@@ -84,7 +84,15 @@ export function createApp() {
   app.get("/api/calendar/list", wrap(calendarListHandler));
   app.post("/api/calendar/create", wrap(calendarCreateHandler));
   app.put("/api/calendar/update", wrap(calendarUpdateHandler));
+  app.put("/api/calendar/event/:id", wrap((req: any, res: any) => {
+    req.body.eventId = req.params.id;
+    return calendarUpdateHandler(req, res);
+  }));
   app.delete("/api/calendar/delete", wrap(calendarDeleteHandler));
+  app.delete("/api/calendar/event/:id", wrap((req: any, res: any) => {
+    req.query.eventId = req.params.id;
+    return calendarDeleteHandler(req, res);
+  }));
 
   app.get("/api/gmail/recent", wrap(gmailRecentHandler));
   app.get("/api/gmail/message", wrap(gmailMessageHandler));

@@ -105,18 +105,155 @@ function mapGoogleEvent(item: any): CalendarEvent {
   };
 }
 
+export function parseNaturalDateFilter(query?: string): { timeMin?: string; timeMax?: string } {
+  if (!query) return {};
+  const q = query.toLowerCase().trim();
+  const now = new Date();
+  
+  const startOfDay = (d: Date) => {
+    const res = new Date(d);
+    res.setHours(0, 0, 0, 0);
+    return res.toISOString();
+  };
+  const endOfDay = (d: Date) => {
+    const res = new Date(d);
+    res.setHours(23, 59, 59, 999);
+    return res.toISOString();
+  };
+
+  if (q === 'today') {
+    return { timeMin: startOfDay(now), timeMax: endOfDay(now) };
+  }
+  if (q === 'tomorrow') {
+    const tom = new Date(now);
+    tom.setDate(now.getDate() + 1);
+    return { timeMin: startOfDay(tom), timeMax: endOfDay(tom) };
+  }
+  if (q === 'this week') {
+    const dayOfWeek = now.getDay();
+    const distToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distToMon);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { timeMin: startOfDay(monday), timeMax: endOfDay(sunday) };
+  }
+  if (q === 'next week') {
+    const dayOfWeek = now.getDay();
+    const distToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distToMon + 7);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { timeMin: startOfDay(monday), timeMax: endOfDay(sunday) };
+  }
+  if (q === 'this month') {
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { timeMin: startOfDay(firstDay), timeMax: endOfDay(lastDay) };
+  }
+  if (q === 'next month') {
+    const firstDay = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+    return { timeMin: startOfDay(firstDay), timeMax: endOfDay(lastDay) };
+  }
+
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < days.length; i++) {
+    if (q.includes(days[i])) {
+      const targetDay = i;
+      const currentDay = now.getDay();
+      let diff = targetDay - currentDay;
+      if (diff <= 0 || q.includes('next')) {
+        diff += 7;
+      }
+      const targetDate = new Date(now);
+      targetDate.setDate(now.getDate() + diff);
+      return { timeMin: startOfDay(targetDate), timeMax: endOfDay(targetDate) };
+    }
+  }
+
+  const parsed = new Date(query);
+  if (!isNaN(parsed.getTime())) {
+    return { timeMin: startOfDay(parsed), timeMax: endOfDay(parsed) };
+  }
+
+  return {};
+}
+
+export function filterAndDeduplicateEvents(events: CalendarEvent[]): {
+  primaryEvents: CalendarEvent[];
+  hiddenEvents: CalendarEvent[];
+  hiddenCounts: { birthdays: number; travel: number; others: number };
+} {
+  const seenIds = new Set<string>();
+  const seenSummariesAtTime = new Set<string>();
+  
+  let birthdays = 0;
+  let travel = 0;
+  let others = 0;
+
+  const primaryEvents: CalendarEvent[] = [];
+  const hiddenEvents: CalendarEvent[] = [];
+
+  for (const evt of events) {
+    if (!evt || !evt.id) continue;
+    if (seenIds.has(evt.id)) continue;
+    seenIds.add(evt.id);
+
+    const summaryLower = (evt.summary || '').toLowerCase();
+    const startTimeKey = `${summaryLower}_${new Date(evt.start).toDateString()}_${new Date(evt.start).getHours()}`;
+    if (seenSummariesAtTime.has(startTimeKey)) {
+      continue;
+    }
+    seenSummariesAtTime.add(startTimeKey);
+
+    const isBirthday = summaryLower.includes('birthday') || summaryLower.includes('bday') || summaryLower.includes('anniversary');
+    const isTravel = summaryLower.includes('flight') || summaryLower.includes('train') || summaryLower.includes('bus') || summaryLower.includes('hotel') || summaryLower.includes('reservation') || summaryLower.includes('booking') || summaryLower.includes('movie') || summaryLower.includes('ticket');
+    const isHolidayOrAllDay = summaryLower.includes('holiday') || summaryLower.includes('no school') || summaryLower.includes('reminder:');
+
+    if (isBirthday) {
+      birthdays++;
+      hiddenEvents.push(evt);
+    } else if (isTravel) {
+      travel++;
+      hiddenEvents.push(evt);
+    } else if (isHolidayOrAllDay && !summaryLower.includes('meeting') && !summaryLower.includes('interview') && !summaryLower.includes('class') && !summaryLower.includes('workshop')) {
+      others++;
+      hiddenEvents.push(evt);
+    } else {
+      primaryEvents.push(evt);
+    }
+  }
+
+  return {
+    primaryEvents,
+    hiddenEvents,
+    hiddenCounts: { birthdays, travel, others },
+  };
+}
+
 /**
  * list_events: Retrieves events from Google Calendar or session mock store
  */
 export async function list_events(startDate?: string, endDate?: string, sessionId: string = 'default'): Promise<ToolResult> {
   const session = getSession(sessionId);
 
+  let effectiveStart = startDate;
+  let effectiveEnd = endDate;
+
+  if (startDate && isNaN(new Date(startDate).getTime())) {
+    const parsed = parseNaturalDateFilter(startDate);
+    if (parsed.timeMin) effectiveStart = parsed.timeMin;
+    if (parsed.timeMax) effectiveEnd = parsed.timeMax;
+  }
+
   // Input Validation
   let startMs: number | null = null;
   let endMs: number | null = null;
 
-  if (startDate) {
-    startMs = new Date(startDate).getTime();
+  if (effectiveStart) {
+    startMs = new Date(effectiveStart).getTime();
     if (isNaN(startMs)) {
       return {
         success: false,
@@ -127,8 +264,8 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
     }
   }
 
-  if (endDate) {
-    endMs = new Date(endDate).getTime();
+  if (effectiveEnd) {
+    endMs = new Date(effectiveEnd).getTime();
     if (isNaN(endMs)) {
       return {
         success: false,
@@ -156,16 +293,20 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
         try {
           const response = await calendar.events.list({
             calendarId: 'primary',
-            timeMin: startDate ? new Date(startDate).toISOString() : undefined,
-            timeMax: endDate ? new Date(endDate).toISOString() : undefined,
+            timeMin: effectiveStart ? new Date(effectiveStart).toISOString() : undefined,
+            timeMax: effectiveEnd ? new Date(effectiveEnd).toISOString() : undefined,
             singleEvents: true,
             orderBy: 'startTime',
+            maxResults: 50,
           });
 
-          const events = (response.data.items || []).map(mapGoogleEvent);
+          const rawEvents = (response.data.items || []).map(mapGoogleEvent);
+          const { primaryEvents, hiddenEvents, hiddenCounts } = filterAndDeduplicateEvents(rawEvents);
           return {
             success: true,
-            data: events,
+            data: primaryEvents,
+            hiddenEvents,
+            hiddenCounts,
           };
         } catch (error: any) {
           const errRes = handleGoogleApiError(error);
@@ -203,10 +344,13 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
       }
 
       filtered.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      const { primaryEvents, hiddenEvents, hiddenCounts } = filterAndDeduplicateEvents(filtered);
 
       return {
         success: true,
-        data: filtered,
+        data: primaryEvents,
+        hiddenEvents,
+        hiddenCounts,
       };
     } catch (error: any) {
       return {
