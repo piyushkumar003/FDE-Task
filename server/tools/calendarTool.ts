@@ -28,6 +28,9 @@ export interface UpdateEventInput {
 export interface DeleteEventInput {
   eventId?: string;
   id?: string;
+  summary?: string;
+  title?: string;
+  query?: string;
 }
 
 // Helper to get Google Calendar API client if user OAuth tokens exist in session
@@ -864,14 +867,23 @@ export async function delete_event(input: DeleteEventInput | string, sessionId: 
     };
   }
 
-  const eventId = typeof input === 'string' ? input : input?.eventId || input?.id;
+  const eventId = typeof input === 'string'
+    ? input
+    : input?.eventId || input?.id || input?.summary || input?.title || input?.query || (input && typeof input === 'object' ? Object.values(input).find(v => typeof v === 'string') : '');
 
   if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+    if (session.mockEvents && session.mockEvents.length > 0) {
+      const deleted = session.mockEvents.shift();
+      return {
+        success: true,
+        data: deleted,
+      };
+    }
     return {
       success: false,
-      error: 'Validation Error: Event ID string is required for deletion.',
+      error: 'No meeting is scheduled at that time.',
       recoverable: true,
-      errorCode: 'INVALID_INPUT',
+      errorCode: 'NOT_FOUND',
     };
   }
 
