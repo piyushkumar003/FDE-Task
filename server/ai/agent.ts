@@ -218,7 +218,13 @@ export async function processUserMessage(
     // Heuristic Fallback if AI not available or returned general
     if (currentIntent === 'conversation.general') {
       const q = userQuery.toLowerCase();
-      if (q.includes('draft') || q.includes('compose') || q.includes('write email') || q.includes('send mail')) {
+      if (q.includes('send') || q.includes('mail to') || q.includes('email to') || q.includes('compose') || q.includes('write')) {
+        currentIntent = 'gmail.send';
+        const emailMatch = userQuery.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+        if (emailMatch) entities.recipient = emailMatch[0];
+        const aboutMatch = userQuery.match(/(?:about|regarding|subject)\s*[-:]?\s*([^,.\n]+)/i);
+        if (aboutMatch) entities.subject = aboutMatch[1].trim();
+      } else if (q.includes('draft') || q.includes('write email') || q.includes('send mail')) {
         currentIntent = 'gmail.draft';
         const emailMatch = userQuery.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
         if (emailMatch) entities.recipient = emailMatch[0];
@@ -228,6 +234,11 @@ export async function processUserMessage(
 
         const topicMatch = userQuery.match(/topic\s*(?:discussed)?\s*[-:]?\s*(.*)/i);
         if (topicMatch) entities.body = topicMatch[1].trim();
+      } else if (q.includes('latest email') || q.includes('newest email') || (q.includes('read') && q.includes('email')) || (q.includes('open') && q.includes('email'))) {
+        currentIntent = 'gmail.read';
+      } else if (q.includes('email') || q.includes('gmail') || q.includes('inbox') || q.includes('mail') || q.includes('find') || q.includes('search')) {
+        currentIntent = 'gmail.search';
+        entities.emailSearchQuery = userQuery;
       } else if (q.includes('delete') || q.includes('cancel') || q.includes('remove')) {
         if (q.includes('task')) {
           currentIntent = 'tasks.delete';
@@ -268,17 +279,6 @@ export async function processUserMessage(
         } else {
           currentIntent = 'tasks.read';
         }
-      } else if (q.includes('send') || q.includes('mail to') || q.includes('email to') || q.includes('compose') || q.includes('write')) {
-        currentIntent = 'gmail.send';
-        const emailMatch = userQuery.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-        if (emailMatch) entities.recipient = emailMatch[0];
-        const aboutMatch = userQuery.match(/(?:about|regarding|subject)\s*[-:]?\s*([^,.\n]+)/i);
-        if (aboutMatch) entities.subject = aboutMatch[1].trim();
-      } else if (q.includes('read') || q.includes('open') || q.includes('latest email') || q.includes('newest email')) {
-        currentIntent = 'gmail.read';
-      } else if (q.includes('email') || q.includes('gmail') || q.includes('inbox') || q.includes('mail') || q.includes('find') || q.includes('search')) {
-        currentIntent = 'gmail.search';
-        entities.emailSearchQuery = userQuery;
       } else if (q.includes('contact') || q.includes('find john') || q.includes('email for') || q.includes('phone number')) {
         currentIntent = 'contacts.search';
       } else if (q.includes('drive') || q.includes('document') || q.includes('doc') || q.includes('file') || q.includes('sheet') || q.includes('pdf') || q.includes('folder')) {

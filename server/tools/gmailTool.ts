@@ -17,6 +17,14 @@ function getGmailClient(sessionId: string = 'default') {
 export async function searchEmails(query: string, sessionId: string = 'default'): Promise<ToolResult> {
   try {
     const session = getSession(sessionId);
+    if (session.isAuthenticated && !session.tokens?.access_token && !session.isGuest) {
+      return {
+        success: false,
+        error: 'Unable to fetch details from mail, please try again.',
+        errorCode: 'GMAIL_UNAUTHENTICATED',
+        recoverable: true,
+      };
+    }
     const gmail = getGmailClient(sessionId);
     if (gmail) {
       try {

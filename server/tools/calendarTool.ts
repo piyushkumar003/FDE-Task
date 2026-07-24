@@ -178,11 +178,16 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
         }
       }
     } else {
-      // Authenticated via Google/Email/Demo login but no live Google access token: return empty schedule (vague/clean)
-      return {
-        success: true,
-        data: [],
-      };
+      if (session.isGuest) {
+        // Fall through to mock store
+      } else {
+        return {
+          success: false,
+          error: 'Unable to fetch details from calendar, please try again.',
+          errorCode: 'CALENDAR_UNAUTHENTICATED',
+          recoverable: true,
+        };
+      }
     }
   }
 
