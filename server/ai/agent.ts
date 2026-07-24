@@ -491,12 +491,7 @@ export async function processUserMessage(
       });
       responseText = `Successfully cancelled event: **${deleted.summary}**.`;
     } else {
-      const errReason = toolResult.error || toolResult.reason || 'Unknown error';
-      if (errReason.toLowerCase().includes('not found') || toolResult.errorCode === 'NOT_FOUND') {
-        responseText = `I couldn't find a calendar event matching '${targetQuery}'.`;
-      } else {
-        responseText = `I couldn't find a calendar event matching '${targetQuery}'.`;
-      }
+      responseText = toolResult.error || 'No meeting is scheduled at that time.';
     }
   } else if (currentIntent === 'tasks.create') {
     const title = entities.title || 'Submit report';

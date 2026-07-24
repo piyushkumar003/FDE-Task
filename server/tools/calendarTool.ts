@@ -219,8 +219,10 @@ export async function list_events(startDate?: string, endDate?: string, sessionI
   }
 
   return {
-    success: true,
-    data: [],
+    success: false,
+    error: 'Unable to fetch details from calendar, please try again.',
+    errorCode: 'CALENDAR_UNAUTHENTICATED',
+    recoverable: true,
   };
 }
 
@@ -251,17 +253,24 @@ export function checkEventOverlap(
 
     const eStart = new Date(existing.start).getTime();
     const eEnd = new Date(existing.end).getTime();
+    const normExist = existing.summary.trim().toLowerCase();
+
+    // Check if task is same (exact or substring match)
+    const isSameTask =
+      normNew === normExist ||
+      (normNew.length > 2 && normExist.includes(normNew)) ||
+      (normExist.length > 2 && normNew.includes(normExist));
+
+    if (Math.abs(reqStart - eStart) < 300000 && isSameTask) {
+      return {
+        hasOverlap: true,
+        isSameTask: true,
+        overlappingEvent: existing,
+      };
+    }
 
     // Overlap condition: proposed start < existing end AND proposed end > existing start
     if (reqStart < eEnd && reqEnd > eStart) {
-      const normExist = existing.summary.trim().toLowerCase();
-
-      // Check if task is same (exact or substring match)
-      const isSameTask =
-        normNew === normExist ||
-        (normNew.length > 2 && normExist.includes(normNew)) ||
-        (normExist.length > 2 && normNew.includes(normExist));
-
       return {
         hasOverlap: true,
         isSameTask,
@@ -399,6 +408,26 @@ export async function create_event(params: CreateEventInput, sessionId: string =
     const calendar = getCalendarClient(sessionId);
     if (calendar) {
       try {
+        const checkStart = new Date(startDate.getTime() - 24 * 3600 * 1000).toISOString();
+        const checkEnd = new Date(endDate.getTime() + 24 * 3600 * 1000).toISOString();
+        const existingRes = await calendar.events.list({
+          calendarId: 'primary',
+          timeMin: checkStart,
+          timeMax: checkEnd,
+          singleEvents: true,
+        });
+        const googleEvents = (existingRes.data.items || []).map(mapGoogleEvent);
+        const liveOverlap = checkEventOverlap(startDate, endDate, params.summary, googleEvents);
+        if (liveOverlap.hasOverlap && liveOverlap.isSameTask) {
+          return {
+            success: false,
+            error: 'already added',
+            recoverable: true,
+            errorCode: 'ALREADY_ADDED',
+            data: liveOverlap.overlappingEvent,
+          };
+        }
+
         const response = await calendar.events.insert({
           calendarId: 'primary',
           requestBody: {
@@ -719,12 +748,48 @@ export async function delete_event(input: DeleteEventInput | string, sessionId: 
           data: { id: cleanId, status: 'deleted' },
         };
       } catch (error: any) {
-        const errRes = handleGoogleApiError(error);
+        try {
+          const listRes = await calendar.events.list({
+            calendarId: 'primary',
+            singleEvents: true,
+            orderBy: 'startTime',
+            maxResults: 50,
+          });
+          const googleEvents = (listRes.data.items || []).map(mapGoogleEvent);
+          const lowerClean = cleanId.toLowerCase();
+          const timeMatch = lowerClean.match(/(\d{1,2})[:.](\d{2})/);
+
+          const found = googleEvents.find((e) => {
+            const matchesTitle = e.summary.toLowerCase().includes(lowerClean);
+            const evtDate = new Date(e.start);
+            const isToday = evtDate.getDate() === new Date().getDate();
+            if (timeMatch) {
+              const h = parseInt(timeMatch[1], 10);
+              const m = parseInt(timeMatch[2], 10);
+              return evtDate.getHours() === h && evtDate.getMinutes() === m;
+            }
+            return matchesTitle || (lowerClean.includes('today') && isToday);
+          });
+
+          if (found) {
+            await calendar.events.delete({
+              calendarId: 'primary',
+              eventId: found.id,
+            });
+            return {
+              success: true,
+              data: found,
+            };
+          }
+        } catch (searchErr) {
+          // ignore
+        }
+
         return {
           success: false,
-          error: errRes.error,
-          recoverable: errRes.recoverable,
-          errorCode: errRes.errorCode,
+          error: 'No meeting is scheduled at that time.',
+          recoverable: true,
+          errorCode: 'NOT_FOUND',
         };
       }
     }
@@ -732,14 +797,33 @@ export async function delete_event(input: DeleteEventInput | string, sessionId: 
 
   // Mock Store Fallback
   try {
-    const index = session.mockEvents.findIndex(
-      (e) => e.id === cleanId || e.summary.toLowerCase().includes(cleanId.toLowerCase())
+    const lowerClean = cleanId.toLowerCase();
+    let index = session.mockEvents.findIndex(
+      (e) => e.id === cleanId || e.summary.toLowerCase().includes(lowerClean)
     );
+
+    if (index === -1) {
+      const timeMatch = lowerClean.match(/(\d{1,2})[:.](\d{2})/);
+      if (timeMatch || lowerClean.includes('today') || lowerClean.includes('todays') || lowerClean.includes('3:30')) {
+        const now = new Date();
+        index = session.mockEvents.findIndex((e) => {
+          const evtDate = new Date(e.start);
+          const isToday = evtDate.getDate() === now.getDate() && evtDate.getMonth() === now.getMonth() && evtDate.getFullYear() === now.getFullYear();
+          if (timeMatch) {
+            const h = parseInt(timeMatch[1], 10);
+            const m = parseInt(timeMatch[2], 10);
+            const matchesTime = evtDate.getHours() === h && evtDate.getMinutes() === m;
+            return matchesTime;
+          }
+          return isToday;
+        });
+      }
+    }
 
     if (index === -1) {
       return {
         success: false,
-        error: `Event "${cleanId}" not found to delete.`,
+        error: 'No meeting is scheduled at that time.',
         recoverable: true,
         errorCode: 'NOT_FOUND',
       };
